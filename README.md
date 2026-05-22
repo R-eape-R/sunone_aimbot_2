@@ -81,12 +81,6 @@ Precompiled `.exe` builds are provided for both CUDA (NVIDIA only) and DirectML 
 
 ---
 
-## 🗂️ Old Releases
-
-* [Legacy and old versions](https://disk.yandex.ru/d/m0jbkiLEFvnZKg)
-
----
-
 ## 📋 Documentation
 
 * C++ config reference (`config.ini`):
