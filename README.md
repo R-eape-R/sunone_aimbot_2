@@ -72,7 +72,6 @@ Precompiled `.exe` builds are provided for both CUDA (NVIDIA only) and DirectML 
 * **F3:** Pause aiming
 * **F4:** Reload config
 * **Home:** Open/close overlay and settings
-
 ---
 
 ## Circle FOV vs Legacy Circle Mask
@@ -80,42 +79,6 @@ Precompiled `.exe` builds are provided for both CUDA (NVIDIA only) and DirectML 
 The circular targeting option now uses a lightweight **Circle FOV** instead of masking every captured frame.
 
 ### Recommended: Circle FOV
-
-Use **Circle FOV** in the overlay capture settings. This keeps the captured image rectangular and unmodified, then filters detections by checking whether each detection center is inside the configured circle.
-
-Why this is preferred:
-
-* Keeps CUDA Direct Capture available on the CUDA/TensorRT build.
-* Avoids per-frame pixel masking and extra CPU frame copies.
-* Adds only tiny overhead: a few math operations per detection.
-* Can draw the circle guide in the GUI preview and game overlay.
-
-The **Circle FOV size** slider controls the radius as a percentage of the old full-size mask. `100%` matches the old circle mask radius.
-
-### Visual Guide
-
-The circle can be displayed without changing the captured frame:
-
-* GUI preview: enable **Show Circle Guide** while the preview window is open.
-* Game overlay: enable **Draw Circle Guide** in the game overlay settings.
-
-These are draw-only guides and should have negligible performance impact.
-
-### Legacy Pixel Circle Mask (CPU)
-
-The old `circle_mask` behavior is still available as **Legacy Pixel Circle Mask (CPU)**, but it is not recommended for the CUDA/TensorRT build.
-
-That legacy option physically masks every frame on the CPU before inference. On CUDA/TensorRT, enabling it can force the capture pipeline away from:
-
-`DXGI GPU capture -> CUDA interop -> TensorRT`
-
-and into:
-
-`CPU capture -> CPU pixel mask -> CPU preprocess -> copy to CUDA -> TensorRT`
-
-That fallback path can cause extra load and inconsistent performance. Use it only if you specifically need the captured frame pixels outside the circle to be blacked out.
-
-Existing configs that had `circle_mask=true` are migrated to the new Circle FOV behavior on load, while the legacy pixel mask is disabled unless the newer Circle FOV config keys already exist.
 
 ---
 
