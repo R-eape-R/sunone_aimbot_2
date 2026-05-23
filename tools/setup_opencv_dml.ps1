@@ -41,6 +41,63 @@ function Get-LatestVcDir {
         Select-Object -First 1
 }
 
+function Get-OpenCvWorldPair {
+    param(
+        [string]$BuildDir,
+        [ValidateSet("Release", "Debug")]
+        [string]$Configuration = "Release"
+    )
+
+    $vcDir = Get-LatestVcDir -BuildDir $BuildDir
+    if (-not $vcDir) {
+        return $null
+    }
+
+    $libs = Get-ChildItem -Path (Join-Path $vcDir.FullName "lib") -File -Filter "opencv_world*.lib" -ErrorAction SilentlyContinue |
+        Where-Object {
+            if ($Configuration -eq "Debug") {
+                $_.BaseName -match "d$"
+            }
+            else {
+                $_.BaseName -notmatch "d$"
+            }
+        } |
+        Sort-Object Name -Descending
+    foreach ($lib in $libs) {
+        $stem = [System.IO.Path]::GetFileNameWithoutExtension($lib.Name)
+        $dllPath = Join-Path $vcDir.FullName ("bin\" + $stem + ".dll")
+        if (Test-Path -LiteralPath $dllPath) {
+            return [pscustomobject]@{
+                VcDir = $vcDir.FullName
+                LibPath = $lib.FullName
+                DllPath = $dllPath
+                WorldStem = $stem
+            }
+        }
+    }
+
+    if ($Configuration -ne "Release") {
+        return $null
+    }
+
+    $fallbackLibs = Get-ChildItem -Path (Join-Path $vcDir.FullName "lib") -File -Filter "opencv_world*.lib" -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending
+    foreach ($lib in $fallbackLibs) {
+        $stem = [System.IO.Path]::GetFileNameWithoutExtension($lib.Name)
+        $dllPath = Join-Path $vcDir.FullName ("bin\" + $stem + ".dll")
+        if (Test-Path -LiteralPath $dllPath) {
+            return [pscustomobject]@{
+                VcDir = $vcDir.FullName
+                LibPath = $lib.FullName
+                DllPath = $dllPath
+                WorldStem = $stem
+            }
+        }
+    }
+
+    return $null
+}
+
 function Test-OpenCvBuildLayout {
     param([string]$BuildDir)
 
@@ -49,14 +106,7 @@ function Test-OpenCvBuildLayout {
         return $false
     }
 
-    $vcDir = Get-LatestVcDir -BuildDir $BuildDir
-    if (-not $vcDir) {
-        return $false
-    }
-
-    $libPath = Join-Path $vcDir.FullName "lib\opencv_world4130.lib"
-    $dllPath = Join-Path $vcDir.FullName "bin\opencv_world4130.dll"
-    return (Test-Path -LiteralPath $libPath) -and (Test-Path -LiteralPath $dllPath)
+    return $null -ne (Get-OpenCvWorldPair -BuildDir $BuildDir)
 }
 
 function Find-OpenCvBuildDir {
@@ -225,7 +275,7 @@ try {
     }
 
     if ([string]::IsNullOrWhiteSpace($DestinationDir)) {
-        $DestinationDir = Join-Path $RepoRoot "sunone_aimbot_2\modules\opencv\prebuilt"
+        $DestinationDir = Join-Path $RepoRoot "sunone_aimbot_2\modules\opencv\build\dml"
     }
     $DestinationDir = Resolve-NormalizedPath $DestinationDir
 
@@ -240,23 +290,22 @@ try {
     $downloadUrls = $downloadUrls | Select-Object -Unique
 
     if ([string]::IsNullOrWhiteSpace($InstallerPath)) {
-        $InstallerPath = Join-Path $DestinationDir ("opencv-" + $OpenCvVersion + "-windows.exe")
+        $InstallerPath = Join-Path $RepoRoot ("sunone_aimbot_2\modules\_downloads\opencv-" + $OpenCvVersion + "-windows.exe")
     }
     $InstallerPath = Resolve-NormalizedPath $InstallerPath
+    New-DirectoryIfMissing ([System.IO.Path]::GetDirectoryName($InstallerPath))
 
-    $stableOpenCvRoot = Join-Path $DestinationDir "opencv"
-    $stableBuildDir = Join-Path $stableOpenCvRoot "build"
-    $extractRoot = Join-Path $DestinationDir "_extract"
+    $stableOpenCvRoot = $DestinationDir
+    $stableBuildDir = $DestinationDir
+    $extractRoot = Join-Path (Join-Path $RepoRoot "sunone_aimbot_2\modules\_downloads") ("opencv-" + $OpenCvVersion + "-extract")
 
     if ((-not $ForceDownload) -and (Test-OpenCvBuildLayout -BuildDir $stableBuildDir)) {
         Write-Step "Prebuilt OpenCV is already prepared: $stableBuildDir"
-        $vcDir = Get-LatestVcDir -BuildDir $stableBuildDir
+        $worldPair = Get-OpenCvWorldPair -BuildDir $stableBuildDir
         $includeDir = Join-Path $stableBuildDir "include"
-        $libPath = Join-Path $vcDir.FullName "lib\opencv_world4130.lib"
-        $dllPath = Join-Path $vcDir.FullName "bin\opencv_world4130.dll"
         Write-Host "AIMBOT_OPENCV_INCLUDE_DIR=$includeDir"
-        Write-Host "AIMBOT_OPENCV_LIBRARY=$libPath"
-        Write-Host "AIMBOT_OPENCV_DLL=$dllPath"
+        Write-Host "AIMBOT_OPENCV_LIBRARY=$($worldPair.LibPath)"
+        Write-Host "AIMBOT_OPENCV_DLL=$($worldPair.DllPath)"
         exit 0
     }
 
@@ -297,7 +346,7 @@ try {
         Write-Host "InstallerPath=$InstallerPath"
         Write-Host "TargetBuildDir=$stableBuildDir"
         Write-Host "Configure DML with:"
-        Write-Host "  cmake -S . -B build/dml -G `"Visual Studio 18 2026`" -A x64 -DAIMBOT_USE_CUDA=OFF"
+        Write-Host "  cmake -S . -B build/dml -G `"Ninja Multi-Config`" -DAIMBOT_USE_CUDA=OFF"
         exit 0
     }
 
@@ -318,34 +367,32 @@ try {
         throw "Could not extract OpenCV package automatically. Extract manually and place OpenCV as: $stableBuildDir"
     }
 
-    $detectedOpenCvRoot = Split-Path -Parent $detectedBuildDir
-    if (Test-Path -LiteralPath $stableOpenCvRoot) {
-        Write-Step "Replacing existing prebuilt OpenCV directory: $stableOpenCvRoot"
+    if (Test-Path -LiteralPath $stableBuildDir) {
+        Write-Step "Replacing existing prebuilt OpenCV directory: $stableBuildDir"
         if (-not $DryRun) {
-            Remove-Item -LiteralPath $stableOpenCvRoot -Recurse -Force
+            Remove-Item -LiteralPath $stableBuildDir -Recurse -Force
         }
     }
 
-    Write-Step "Installing extracted OpenCV to: $stableOpenCvRoot"
+    Write-Step "Installing extracted OpenCV build layout to: $stableBuildDir"
     if (-not $DryRun) {
-        Copy-Item -LiteralPath $detectedOpenCvRoot -Destination $stableOpenCvRoot -Recurse
+        New-DirectoryIfMissing $stableBuildDir
+        Copy-Item -Path (Join-Path $detectedBuildDir "*") -Destination $stableBuildDir -Recurse -Force
     }
 
     if (-not (Test-OpenCvBuildLayout -BuildDir $stableBuildDir)) {
         throw "Installed OpenCV layout is invalid: $stableBuildDir"
     }
 
-    $latestVcDir = Get-LatestVcDir -BuildDir $stableBuildDir
+    $worldPairOut = Get-OpenCvWorldPair -BuildDir $stableBuildDir
     $includeDirOut = Join-Path $stableBuildDir "include"
-    $libPathOut = Join-Path $latestVcDir.FullName "lib\opencv_world4130.lib"
-    $dllPathOut = Join-Path $latestVcDir.FullName "bin\opencv_world4130.dll"
 
     Write-Step "Done."
     Write-Host "AIMBOT_OPENCV_INCLUDE_DIR=$includeDirOut"
-    Write-Host "AIMBOT_OPENCV_LIBRARY=$libPathOut"
-    Write-Host "AIMBOT_OPENCV_DLL=$dllPathOut"
+    Write-Host "AIMBOT_OPENCV_LIBRARY=$($worldPairOut.LibPath)"
+    Write-Host "AIMBOT_OPENCV_DLL=$($worldPairOut.DllPath)"
     Write-Host "Now configure DML build:"
-    Write-Host "  cmake -S . -B build/dml -G `"Visual Studio 18 2026`" -A x64 -DAIMBOT_USE_CUDA=OFF"
+    Write-Host "  cmake -S . -B build/dml -G `"Ninja Multi-Config`" -DAIMBOT_USE_CUDA=OFF"
 }
 catch {
     Write-Error $_

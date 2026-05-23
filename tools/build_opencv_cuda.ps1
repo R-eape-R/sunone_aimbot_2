@@ -7,7 +7,8 @@ param(
     [string]$OpenCvContribDir = "",
     [string]$OpenCvBuildDir = "",
     [string]$InstallPrefix = "",
-    [string]$Generator = "Visual Studio 18 2026",
+    [string]$Generator = "Ninja Multi-Config",
+    [string]$NinjaPath = "",
     [string]$Architecture = "x64",
     [ValidateSet("Release", "RelWithDebInfo", "MinSizeRel", "Debug")]
     [string]$Configuration = "Release",
@@ -123,6 +124,66 @@ function Test-CMakeCacheContains {
     return $null -ne (Select-String -Path $cachePath -Pattern $Pattern -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
 
+function Repair-OpenCvCudevZipHeader {
+    param([string]$ContribDir)
+
+    $zipHeader = Join-Path $ContribDir "modules\cudev\include\opencv2\cudev\ptr2d\zip.hpp"
+    if (-not (Test-Path -LiteralPath $zipHeader)) {
+        throw "OpenCV cudev header was not found: $zipHeader"
+    }
+
+    $text = Get-Content -LiteralPath $zipHeader -Raw
+    if ($text -match "_CCCL_BEGIN_NAMESPACE_CUDA_STD") {
+        return
+    }
+    if ($text -notmatch "_LIBCUDACXX_BEGIN_NAMESPACE_STD") {
+        return
+    }
+
+    # CUDA 13.2 renamed the libcu++ namespace helper macros to CCCL names.
+    # OpenCV 4.13.0 still references the older names in this cudev header.
+    $conditionLine = "#if defined(__CUDACC_VER_MAJOR__) && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))"
+    $beginPattern = [regex]::Escape($conditionLine) + "\r?\n_LIBCUDACXX_BEGIN_NAMESPACE_STD"
+    $beginReplacement = @(
+        $conditionLine,
+        "#if defined(_LIBCUDACXX_BEGIN_NAMESPACE_STD)",
+        "_LIBCUDACXX_BEGIN_NAMESPACE_STD",
+        "#elif defined(_CCCL_BEGIN_NAMESPACE_CUDA_STD)",
+        "_CCCL_BEGIN_NAMESPACE_CUDA_STD",
+        "#else",
+        "namespace cuda { namespace std {",
+        "#endif"
+    ) -join "`r`n"
+
+    $endPattern = "\r?\n_LIBCUDACXX_END_NAMESPACE_STD\r?\n\r?\n#endif\r?\n#endif\s*$"
+    $endReplacement = "`r`n" + (@(
+        "#if defined(_LIBCUDACXX_END_NAMESPACE_STD)",
+        "_LIBCUDACXX_END_NAMESPACE_STD",
+        "#elif defined(_CCCL_END_NAMESPACE_CUDA_STD)",
+        "_CCCL_END_NAMESPACE_CUDA_STD",
+        "#else",
+        "}}",
+        "#endif",
+        "",
+        "#endif",
+        "#endif"
+    ) -join "`r`n")
+
+    $updated = [regex]::Replace($text, $beginPattern, $beginReplacement)
+    $updated = [regex]::Replace($updated, $endPattern, $endReplacement)
+    if ($updated -eq $text) {
+        throw "Could not apply CUDA 13.2 cudev compatibility patch to: $zipHeader"
+    }
+
+    Write-Step "Patching OpenCV cudev zip.hpp for CUDA 13.2 CCCL namespace macros"
+    if ($DryRun) {
+        Write-Host ">> Set-Content -LiteralPath `"$zipHeader`" -Value <patched cudev zip.hpp>"
+        return
+    }
+
+    Set-Content -LiteralPath $zipHeader -Value $updated -NoNewline
+}
+
 function Get-CudaArchFromNvidiaSmi {
     if (-not (Get-Command "nvidia-smi" -ErrorAction SilentlyContinue)) {
         return $null
@@ -196,21 +257,18 @@ function Initialize-OpenCvRepo {
 
 try {
     Test-Tool "cmake"
-
-    $requiredGenerator = "Visual Studio 18 2026"
-    if ($Generator -ne $requiredGenerator) {
-        throw "Only '$requiredGenerator' is supported by this project. Remove -Generator override or set -Generator `"$requiredGenerator`"."
+    if ($Generator -notmatch "^Ninja") {
+        throw "Only Ninja generators are supported by this automation. Use -Generator `"Ninja Multi-Config`" or -Generator `"Ninja`"."
     }
-
-    $availableVsGenerators = Get-AvailableVisualStudioGenerators
-    if ($availableVsGenerators.Count -eq 0) {
-        throw "CMake does not report any Visual Studio generators. Install Visual Studio 2026 with C++ tools and update CMake."
+    if ([string]::IsNullOrWhiteSpace($NinjaPath)) {
+        $ninjaCommand = Get-Command "ninja" -ErrorAction SilentlyContinue
+        if ($ninjaCommand) {
+            $NinjaPath = $ninjaCommand.Source
+        }
     }
-    if ($availableVsGenerators -notcontains $requiredGenerator) {
-        $availableText = ($availableVsGenerators -join ", ")
-        throw "Required CMake generator '$requiredGenerator' is not available. Detected generators: $availableText"
+    if ([string]::IsNullOrWhiteSpace($NinjaPath) -and -not $DryRun) {
+        throw "Required tool 'ninja' was not found in PATH. Run tools/build_cuda.ps1 so it can find or cache Ninja first."
     }
-    $Generator = $requiredGenerator
 
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
     if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
@@ -226,17 +284,17 @@ try {
     $OpenCvModulesDir = Resolve-NormalizedPath $OpenCvModulesDir
 
     if ([string]::IsNullOrWhiteSpace($OpenCvSourceDir)) {
-        $OpenCvSourceDir = Join-Path $OpenCvModulesDir ("opencv-" + $OpenCvVersion)
+        $OpenCvSourceDir = Join-Path $OpenCvModulesDir ("src\opencv-" + $OpenCvVersion)
     }
     $OpenCvSourceDir = Resolve-NormalizedPath $OpenCvSourceDir
 
     if ([string]::IsNullOrWhiteSpace($OpenCvContribDir)) {
-        $OpenCvContribDir = Join-Path $OpenCvModulesDir ("opencv_contrib-" + $OpenCvVersion)
+        $OpenCvContribDir = Join-Path $OpenCvModulesDir ("src\opencv_contrib-" + $OpenCvVersion)
     }
     $OpenCvContribDir = Resolve-NormalizedPath $OpenCvContribDir
 
     if ([string]::IsNullOrWhiteSpace($OpenCvBuildDir)) {
-        $OpenCvBuildDir = Join-Path $OpenCvModulesDir "build"
+        $OpenCvBuildDir = Join-Path $RepoRoot "sunone_aimbot_2\modules\opencv\build\cuda"
     }
     $OpenCvBuildDir = Resolve-NormalizedPath $OpenCvBuildDir
 
@@ -257,12 +315,9 @@ try {
         $runConfigure = $false
     }
     $runInstall = $runBuild -and (-not $NoInstall)
-    $msbuildArgs = @("/nodeReuse:false")
+    $parallelArgs = @("--parallel")
     if ($MaxCpuCount -gt 0) {
-        $msbuildArgs += "/m:$MaxCpuCount"
-    }
-    else {
-        $msbuildArgs += "/m"
+        $parallelArgs += $MaxCpuCount.ToString()
     }
 
     Write-Step "Repo root: $RepoRoot"
@@ -271,11 +326,12 @@ try {
     Write-Step "OpenCV build: $OpenCvBuildDir"
     Write-Step "Install prefix: $InstallPrefix"
     Write-Step "CMake generator: $Generator"
-    Write-Step "MSBuild args: $($msbuildArgs -join ' ')"
+    Write-Step "Build parallel args: $($parallelArgs -join ' ')"
 
     New-DirectoryIfMissing $OpenCvModulesDir
     Initialize-OpenCvRepo -TargetDir $OpenCvSourceDir -RemoteUrl "https://github.com/opencv/opencv.git" -Branch $OpenCvVersion
     Initialize-OpenCvRepo -TargetDir $OpenCvContribDir -RemoteUrl "https://github.com/opencv/opencv_contrib.git" -Branch $OpenCvVersion
+    Repair-OpenCvCudevZipHeader -ContribDir $OpenCvContribDir
 
     $nvccPath = Join-Path $CudaPath "bin\nvcc.exe"
     if (-not (Test-Path -LiteralPath $nvccPath)) {
@@ -355,7 +411,6 @@ try {
         "-S", (ConvertTo-CMakePath $OpenCvSourceDir),
         "-B", (ConvertTo-CMakePath $OpenCvBuildDir),
         "-G", $Generator,
-        "-A", $Architecture,
         "-DCMAKE_INSTALL_PREFIX=$(ConvertTo-CMakePath $InstallPrefix)",
         "-DCMAKE_CUDA_FLAGS=--allow-unsupported-compiler",
         "-DCUDA_NVCC_FLAGS=--allow-unsupported-compiler",
@@ -364,7 +419,6 @@ try {
         "-DWITH_CUBLAS=ON",
         "-DENABLE_FAST_MATH=ON",
         "-DCUDA_FAST_MATH=ON",
-        "-DOPENCV_DNN_CUDA=ON",
         "-DBUILD_opencv_world=ON",
         "-DWITH_NVCUVENC=OFF",
         "-DWITH_NVCUVID=OFF",
@@ -373,13 +427,20 @@ try {
         "-DBUILD_EXAMPLES=OFF",
         "-DCUDA_ARCH_BIN=$CudaArchBin"
     )
+    if (-not [string]::IsNullOrWhiteSpace($NinjaPath)) {
+        $cmakeConfigureArgs += "-DCMAKE_MAKE_PROGRAM=$(ConvertTo-CMakePath $NinjaPath)"
+    }
 
     if ($DisableCuDNN) {
-        $cmakeConfigureArgs += "-DWITH_CUDNN=OFF"
+        $cmakeConfigureArgs += @(
+            "-DWITH_CUDNN=OFF",
+            "-DOPENCV_DNN_CUDA=OFF"
+        )
     }
     else {
         $cmakeConfigureArgs += @(
             "-DWITH_CUDNN=ON",
+            "-DOPENCV_DNN_CUDA=ON",
             "-DCUDNN_INCLUDE_DIR=$(ConvertTo-CMakePath $cudnnIncludeDir)",
             "-DCUDNN_LIBRARY=$(ConvertTo-CMakePath $cudnnLibPath)"
         )
@@ -398,26 +459,24 @@ try {
     }
 
     if ($runBuild) {
-        Write-Step "Building ALL_BUILD ($Configuration)..."
+        Write-Step "Building all ($Configuration)..."
         $cmakeBuildAllArgs = @(
             "--build", (ConvertTo-CMakePath $OpenCvBuildDir),
             "--config", $Configuration,
-            "--target", "ALL_BUILD",
-            "--"
+            "--target", "all"
         )
-        $cmakeBuildAllArgs += $msbuildArgs
+        $cmakeBuildAllArgs += $parallelArgs
         Invoke-External "cmake" $cmakeBuildAllArgs
     }
 
     if ($runInstall) {
-        Write-Step "Building INSTALL ($Configuration)..."
+        Write-Step "Building install ($Configuration)..."
         $cmakeBuildInstallArgs = @(
             "--build", (ConvertTo-CMakePath $OpenCvBuildDir),
             "--config", $Configuration,
-            "--target", "INSTALL",
-            "--"
+            "--target", "install"
         )
-        $cmakeBuildInstallArgs += $msbuildArgs
+        $cmakeBuildInstallArgs += $parallelArgs
         Invoke-External "cmake" $cmakeBuildInstallArgs
     }
 
