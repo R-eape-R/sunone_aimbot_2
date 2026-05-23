@@ -15,8 +15,6 @@
 #include <thread>
 #include <chrono>
 #include <functional>
-#include <opencv2/cudawarping.hpp>
-#include <opencv2/cudaarithm.hpp>
 #include <cuda_runtime_api.h>
 
 #include "postProcess.h"
@@ -30,6 +28,7 @@ public:
     void processFrame(const cv::Mat& detection_frame, const cv::Mat& source_frame = cv::Mat());
     void processFrameGpu(const cv::cuda::GpuMat& frame);
     void inferenceThread();
+    void requestStop();
 
     float img_scale;
 
@@ -82,13 +81,14 @@ private:
 
     void preProcess(const cv::Mat& frame);
     void preProcess(const cv::cuda::GpuMat& frame);
+    void copyCpuTensorToDevice(const cv::Mat& rgbFloatFrame, int width, int height, void* inputBuffer);
 
-    cv::cuda::GpuMat gpuFrameBuffer;
-    cv::cuda::GpuMat gpuResizedBuffer;
-    cv::cuda::GpuMat gpuFloatBuffer;
-    std::vector<cv::cuda::GpuMat> gpuChannelBuffers;
-
-    cv::cuda::Stream cvStream;
+    cv::Mat cpuDownloadedFrame;
+    cv::Mat cpuBgrBuffer;
+    cv::Mat cpuResizedBuffer;
+    cv::Mat cpuRgbBuffer;
+    cv::Mat cpuFloatBuffer;
+    std::vector<float> inputHostBuffer;
 
     std::vector<Detection> postProcess(
         const float* output,
@@ -114,10 +114,6 @@ private:
 
     std::unordered_map<std::string, nvinfer1::DataType> outputTypes;
     std::unordered_map<std::string, std::vector<float>> fp16OutputScratch;
-
-    cv::cuda::GpuMat resizedBuffer;
-    cv::cuda::GpuMat floatBuffer;
-    std::vector<cv::cuda::GpuMat> channelBuffers;
 
     // CUDA Events
     cudaEvent_t preprocessStartEvent = nullptr;

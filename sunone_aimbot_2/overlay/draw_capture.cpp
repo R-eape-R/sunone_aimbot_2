@@ -97,7 +97,21 @@ void draw_capture_settings()
             ImGui::PopTextWrapPos();
         }
 
-        if (ImGui::Checkbox("Circle mask", &config.circle_mask))
+        if (ImGui::Checkbox("Circle FOV", &config.circle_fov_enabled))
+        {
+            OverlayConfig_MarkDirty();
+        }
+
+        if (config.circle_fov_enabled)
+        {
+            ImGui::SetNextItemWidth(CaptureCompactComboWidth());
+            if (ImGui::SliderInt("Circle FOV size", &config.circle_fov_radius_percent, 1, 100, "%d%%"))
+            {
+                OverlayConfig_MarkDirty();
+            }
+        }
+
+        if (ImGui::Checkbox("Legacy Pixel Circle Mask (CPU)", &config.circle_mask))
         {
             OverlayConfig_MarkDirty();
         }

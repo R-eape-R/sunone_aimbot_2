@@ -17,6 +17,7 @@
 #include "scr/data_collector.h"
 #include "postProcess.h"
 #include "capture.h"
+#include "capture/circle_fov.h"
 #include "other_tools.h"
 #ifdef USE_CUDA
 #include "depth/depth_mask.h"
@@ -124,6 +125,24 @@ void filterDetectionsByDepthMask(std::vector<Detection>&)
 {
 }
 #endif
+}
+
+void filterDetectionsByCircleFov(std::vector<Detection>& detections)
+{
+    if (detections.empty() || !config.circle_fov_enabled)
+        return;
+
+    const cv::Size detectionSize(config.detection_resolution, config.detection_resolution);
+    detections.erase(
+        std::remove_if(detections.begin(), detections.end(),
+            [&detectionSize](const Detection& det)
+            {
+                const cv::Point2f center(
+                    static_cast<float>(det.box.x) + static_cast<float>(det.box.width) * 0.5f,
+                    static_cast<float>(det.box.y) + static_cast<float>(det.box.height) * 0.5f);
+                return !pointInsideCircleFov(center, detectionSize, config.circle_fov_radius_percent);
+            }),
+        detections.end());
 }
 
 std::string GetDMLDeviceName(int deviceId)
@@ -324,15 +343,16 @@ std::vector<std::vector<Detection>> DirectMLDetector::detectBatch(const std::vec
         std::vector<int64_t> shp = { static_cast<int64_t>(rows), static_cast<int64_t>(cols) };
         detections = postProcessYoloDML(ptr, shp, num_classes, conf_thr, nms_thr, &nmsTimeTmp);
 
-        if (useFixed && (target_w != config.detection_resolution))
+        if (useFixed && (target_w != config.detection_resolution || target_h != config.detection_resolution))
         {
-            float scale = static_cast<float>(config.detection_resolution) / target_w;
+            float scaleX = static_cast<float>(config.detection_resolution) / target_w;
+            float scaleY = static_cast<float>(config.detection_resolution) / target_h;
             for (auto& d : detections)
             {
-                d.box.x = static_cast<int>(d.box.x * scale);
-                d.box.y = static_cast<int>(d.box.y * scale);
-                d.box.width = static_cast<int>(d.box.width * scale);
-                d.box.height = static_cast<int>(d.box.height * scale);
+                d.box.x = static_cast<int>(d.box.x * scaleX);
+                d.box.y = static_cast<int>(d.box.y * scaleY);
+                d.box.width = static_cast<int>(d.box.width * scaleX);
+                d.box.height = static_cast<int>(d.box.height * scaleY);
             }
         }
 
@@ -446,6 +466,7 @@ void DirectMLDetector::dmlInferenceThread()
                 const std::vector<Detection>& detections = detectionsBatch.back();
                 std::vector<Detection> filteredDetections = detections;
                 filterDetectionsByDepthMask(filteredDetections);
+                filterDetectionsByCircleFov(filteredDetections);
 
                 std::vector<cv::Rect> boxes;
                 std::vector<int> classes;

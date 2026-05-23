@@ -19,6 +19,9 @@ public:
     int capture_fps;
     int monitor_idx;
     bool circle_mask;
+    bool circle_fov_enabled;
+    int circle_fov_radius_percent;
+    bool circle_fov_show_preview;
     bool capture_borders;
     bool capture_cursor;
     std::string virtual_camera_name;
@@ -157,6 +160,7 @@ public:
     bool game_overlay_draw_future;
     bool game_overlay_draw_wind_tail;
     bool game_overlay_draw_frame;
+    bool game_overlay_draw_circle_fov;
     bool game_overlay_show_target_correction;
     int game_overlay_box_a;
     int game_overlay_box_r;

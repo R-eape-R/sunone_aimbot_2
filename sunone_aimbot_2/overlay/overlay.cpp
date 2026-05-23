@@ -890,6 +890,7 @@ void OverlayThread()
             }
             else
             {
+                OverlayConfig_SaveNow();
                 ShowWindow(g_hwnd, SW_HIDE);
             }
 
@@ -1009,6 +1010,7 @@ void OverlayThread()
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
+    OverlayConfig_SaveNow();
     release_body_texture();
 
     ImGui_ImplDX11_Shutdown();

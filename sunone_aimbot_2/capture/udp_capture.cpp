@@ -10,6 +10,7 @@ UDPCapture::UDPCapture(int width, int height, const std::string& ip, int port)
     , port_(port)
     , socket_(INVALID_SOCKET)
     , is_connected_(false)
+    , initialized_(false)
     , should_stop_(false)
     , received_frames_(0)
     , dropped_frames_(0)
@@ -21,7 +22,7 @@ UDPCapture::UDPCapture(int width, int height, const std::string& ip, int port)
         return;
     }
 
-    Initialize();
+    initialized_ = Initialize();
 }
 
 UDPCapture::~UDPCapture()
@@ -32,6 +33,7 @@ UDPCapture::~UDPCapture()
 
 bool UDPCapture::Initialize()
 {
+    initialized_ = false;
     if (socket_ != INVALID_SOCKET)
         closesocket(socket_);
 
@@ -86,6 +88,7 @@ bool UDPCapture::Initialize()
     receive_thread_ = std::thread(&UDPCapture::ReceiveThread, this);
 
     std::cout << "[UDPCapture] Listening on UDP " << ip_ << ":" << port_ << std::endl;
+    initialized_ = true;
     return true;
 }
 
@@ -93,6 +96,7 @@ void UDPCapture::Cleanup()
 {
     should_stop_ = true;
     is_connected_ = false;
+    initialized_ = false;
 
     if (receive_thread_.joinable())
     {
@@ -116,7 +120,7 @@ void UDPCapture::SetUDPParams(const std::string& ip, int port)
         if (is_connected_)
         {
             Cleanup();
-            Initialize();
+            initialized_ = Initialize();
         }
     }
 }

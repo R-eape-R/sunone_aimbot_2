@@ -28,9 +28,9 @@ public:
     void release();
     void move(int x, int y);
 
-    bool aiming_active;
-    bool shooting_active;
-    bool zooming_active;
+    std::atomic<bool> aiming_active;
+    std::atomic<bool> shooting_active;
+    std::atomic<bool> zooming_active;
 
 private:
     void sendCommand(const std::string& command);

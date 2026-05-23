@@ -489,8 +489,19 @@ int main()
         }
 
 #ifdef USE_CUDA
+        trt_detector.requestStop();
         trt_detThread.join();
 #endif
+
+        gameOverlayShouldExit.store(true);
+        if (gameOverlayThread.joinable()) gameOverlayThread.join();
+        if (gameOverlayPtr)
+        {
+            gameOverlayPtr->Stop();
+            delete gameOverlayPtr;
+            gameOverlayPtr = nullptr;
+        }
+
         mouseMovThread.join();
         overlayThread.join();
 
@@ -521,15 +532,6 @@ int main()
         {
             delete dml_detector;
             dml_detector = nullptr;
-        }
-
-        gameOverlayShouldExit.store(true);
-        if (gameOverlayThread.joinable()) gameOverlayThread.join();
-        if (gameOverlayPtr)
-        {
-            gameOverlayPtr->Stop();
-            delete gameOverlayPtr;
-            gameOverlayPtr = nullptr;
         }
 
         return 0;

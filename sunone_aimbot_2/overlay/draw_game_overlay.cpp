@@ -82,6 +82,9 @@ void draw_game_overlay_settings()
         if (ImGui::Checkbox("Draw Capture Frame", &config.game_overlay_draw_frame))
             OverlayConfig_MarkDirty();
 
+        if (ImGui::Checkbox("Draw Circle Guide", &config.game_overlay_draw_circle_fov))
+            OverlayConfig_MarkDirty();
+
         bool frameColorChanged = false;
 
         ImGui::SliderInt("A##go_frame_a", &config.game_overlay_frame_a, 0, 255);

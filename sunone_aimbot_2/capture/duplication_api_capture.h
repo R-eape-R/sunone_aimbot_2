@@ -10,6 +10,19 @@
 #include <cuda_runtime_api.h>
 #include <opencv2/core/cuda.hpp>
 struct cudaGraphicsResource;
+
+enum class GpuCaptureStatus
+{
+    Captured,
+    NotReady,
+    Timeout,
+    DeviceLost,
+    AcquireFailed,
+    MissingTexture,
+    CudaMapFailed,
+    CudaArrayFailed,
+    CudaCopyFailed
+};
 #endif
 
 #include "capture.h"
@@ -23,8 +36,9 @@ public:
     ~DuplicationAPIScreenCapture();
 
     cv::Mat GetNextFrameCpu() override;
+    bool isInitialized() const { return initialized_; }
 #ifdef USE_CUDA
-    bool GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra);
+    bool GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra, GpuCaptureStatus* status = nullptr);
 #endif
 
 private:
@@ -48,6 +62,7 @@ private:
     int screenHeight = 0;
     int regionWidth = 0;
     int regionHeight = 0;
+    bool initialized_ = false;
 
     bool createStagingTextureCPU();
 #ifdef USE_CUDA

@@ -7,9 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <opencv2/opencv.hpp>
-#include <opencv2/core/cuda_stream_accessor.hpp>
 #include <opencv2/dnn.hpp>
-#include <opencv2/cudaimgproc.hpp>
 #include <algorithm>
 #include <atomic>
 #include <limits>
@@ -23,9 +21,9 @@
 #include "sunone_aimbot_2.h"
 #include "other_tools.h"
 #include "postProcess.h"
-#include "cuda_preprocess.h"
 #include "depth/depth_mask.h"
 #include "capture.h"
+#include "capture/circle_fov.h"
 #include "scr/data_collector.h"
 
 extern std::atomic<bool> detectionPaused;
@@ -126,6 +124,24 @@ void filterDetectionsByDepthMask(std::vector<Detection>& detections)
             [&suppressionMask](const Detection& det) { return intersectsDepthMask(det.box, suppressionMask); }),
         detections.end());
 }
+
+void filterDetectionsByCircleFov(std::vector<Detection>& detections)
+{
+    if (detections.empty() || !config.circle_fov_enabled)
+        return;
+
+    const cv::Size detectionSize(config.detection_resolution, config.detection_resolution);
+    detections.erase(
+        std::remove_if(detections.begin(), detections.end(),
+            [&detectionSize](const Detection& det)
+            {
+                const cv::Point2f center(
+                    static_cast<float>(det.box.x) + static_cast<float>(det.box.width) * 0.5f,
+                    static_cast<float>(det.box.y) + static_cast<float>(det.box.height) * 0.5f);
+                return !pointInsideCircleFov(center, detectionSize, config.circle_fov_radius_percent);
+            }),
+        detections.end());
+}
 } // namespace
 
 TrtDetector::TrtDetector()
@@ -145,6 +161,7 @@ TrtDetector::TrtDetector()
 
 TrtDetector::~TrtDetector()
 {
+    requestStop();
     destroyCudaGraph();
     freePinnedOutputs();
 
@@ -156,6 +173,12 @@ TrtDetector::~TrtDetector()
     if (inferenceCompleteEvent) cudaEventDestroy(inferenceCompleteEvent);
     if (copyCompleteEvent) cudaEventDestroy(copyCompleteEvent);
     if (stream) cudaStreamDestroy(stream);
+}
+
+void TrtDetector::requestStop()
+{
+    shouldExit = true;
+    inferenceCV.notify_all();
 }
 
 void TrtDetector::freePinnedOutputs()
@@ -470,23 +493,12 @@ void TrtDetector::initialize(const std::string& modelFile)
         return;
     }
 
-    // Pre-allocate GPU buffers
-    gpuResizedBuffer.create(h, w, CV_8UC3);
-    gpuFloatBuffer.create(h, w, CV_32FC3);
-    gpuChannelBuffers.resize(c);
-    for (int i = 0; i < c; ++i)
-        gpuChannelBuffers[i].create(h, w, CV_32F);
-
-    cvStream = cv::cuda::StreamAccessor::wrapStream(stream);
-
     img_scale = static_cast<float>(config.detection_resolution) / w;
 
-    resizedBuffer.create(h, w, CV_8UC3);
-    floatBuffer.create(h, w, CV_32FC3);
-    channelBuffers.clear();
-    channelBuffers.resize(c);
-    for (int i = 0; i < c; ++i)
-        channelBuffers[i].create(h, w, CV_32F);
+    cpuResizedBuffer.create(h, w, CV_8UC3);
+    cpuRgbBuffer.create(h, w, CV_8UC3);
+    cpuFloatBuffer.create(h, w, CV_32FC3);
+    inputHostBuffer.resize(static_cast<size_t>(c) * static_cast<size_t>(h) * static_cast<size_t>(w));
 
     for (const auto& n : inputNames)
         context->setTensorAddress(n.c_str(), inputBindings[n]);
@@ -605,6 +617,8 @@ void TrtDetector::processFrame(const cv::Mat& detection_frame, const cv::Mat& so
         std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
         detectionBuffer.boxes.clear();
         detectionBuffer.classes.clear();
+        detectionBuffer.version++;
+        detectionBuffer.cv.notify_all();
         return;
     }
 
@@ -626,6 +640,8 @@ void TrtDetector::processFrameGpu(const cv::cuda::GpuMat& frame)
         std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
         detectionBuffer.boxes.clear();
         detectionBuffer.classes.clear();
+        detectionBuffer.version++;
+        detectionBuffer.cv.notify_all();
         return;
     }
 
@@ -890,15 +906,6 @@ void TrtDetector::preProcess(const cv::Mat& frame)
     if (frame.empty())
         return;
 
-    gpuFrameBuffer.upload(frame, cvStream);
-    preProcess(gpuFrameBuffer);
-}
-
-void TrtDetector::preProcess(const cv::cuda::GpuMat& frame)
-{
-    if (frame.empty())
-        return;
-
     void* inputBuffer = inputBindings[inputName];
     if (!inputBuffer)
         return;
@@ -917,45 +924,74 @@ void TrtDetector::preProcess(const cv::cuda::GpuMat& frame)
     if (c != 3)
         return;
 
-    cv::cuda::GpuMat bgrFrame;
-    if (frame.channels() == 4)
+    cv::Mat bgrFrame;
+    switch (frame.channels())
     {
-        cv::cuda::cvtColor(frame, gpuFrameBuffer, cv::COLOR_BGRA2BGR, 0, cvStream);
-        bgrFrame = gpuFrameBuffer;
-    }
-    else if (frame.channels() == 1)
-    {
-        cv::cuda::cvtColor(frame, gpuFrameBuffer, cv::COLOR_GRAY2BGR, 0, cvStream);
-        bgrFrame = gpuFrameBuffer;
-    }
-    else if (frame.channels() == 3)
-    {
+    case 4:
+        cv::cvtColor(frame, cpuBgrBuffer, cv::COLOR_BGRA2BGR);
+        bgrFrame = cpuBgrBuffer;
+        break;
+    case 1:
+        cv::cvtColor(frame, cpuBgrBuffer, cv::COLOR_GRAY2BGR);
+        bgrFrame = cpuBgrBuffer;
+        break;
+    case 3:
         bgrFrame = frame;
-    }
-    else
-    {
+        break;
+    default:
         return;
     }
 
-    cv::cuda::resize(bgrFrame, gpuResizedBuffer, cv::Size(w, h), 0, 0, cv::INTER_LINEAR, cvStream);
+    cv::resize(bgrFrame, cpuResizedBuffer, cv::Size(w, h), 0, 0, cv::INTER_LINEAR);
+    cv::cvtColor(cpuResizedBuffer, cpuRgbBuffer, cv::COLOR_BGR2RGB);
+    cpuRgbBuffer.convertTo(cpuFloatBuffer, CV_32FC3, 1.0f / 255.0f);
 
-    gpuResizedBuffer.convertTo(gpuFloatBuffer, CV_32FC3, 1.0 / 255.0, 0.0, cvStream);
+    copyCpuTensorToDevice(cpuFloatBuffer, w, h, inputBuffer);
+}
 
-    launch_hwc_to_chw_norm(
-        gpuFloatBuffer.ptr<float>(),
-        gpuFloatBuffer.step,
-        reinterpret_cast<float*>(inputBuffer),
-        w,
-        h,
-        stream);
+void TrtDetector::preProcess(const cv::cuda::GpuMat& frame)
+{
+    if (frame.empty())
+        return;
 
-    if (config.verbose)
+    frame.download(cpuDownloadedFrame);
+    preProcess(cpuDownloadedFrame);
+}
+
+void TrtDetector::copyCpuTensorToDevice(const cv::Mat& rgbFloatFrame, int width, int height, void* inputBuffer)
+{
+    if (rgbFloatFrame.empty() || rgbFloatFrame.channels() != 3 || !inputBuffer)
+        return;
+
+    const size_t channelSize = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const size_t tensorSize = channelSize * 3;
+    if (inputHostBuffer.size() != tensorSize)
+        inputHostBuffer.resize(tensorSize);
+
+    float* dst = inputHostBuffer.data();
+    for (int y = 0; y < height; ++y)
     {
-        auto err = cudaGetLastError();
-        if (err != cudaSuccess)
+        const cv::Vec3f* row = rgbFloatFrame.ptr<cv::Vec3f>(y);
+        const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(width);
+        for (int x = 0; x < width; ++x)
         {
-            std::cerr << "[Detector] preprocess kernel launch error: " << cudaGetErrorString(err) << std::endl;
+            const size_t idx = rowOffset + static_cast<size_t>(x);
+            const cv::Vec3f& pixel = row[x];
+            dst[idx] = pixel[0];
+            dst[channelSize + idx] = pixel[1];
+            dst[channelSize * 2 + idx] = pixel[2];
         }
+    }
+
+    cudaError_t err = cudaMemcpyAsync(
+        inputBuffer,
+        inputHostBuffer.data(),
+        tensorSize * sizeof(float),
+        cudaMemcpyHostToDevice,
+        stream);
+    if (err != cudaSuccess)
+    {
+        std::cerr << "[Detector] preprocess input copy failed: " << cudaGetErrorString(err) << std::endl;
     }
 }
 
@@ -979,6 +1015,7 @@ std::vector<Detection> TrtDetector::postProcess(const float* output, const std::
         nmsTime
     );
     filterDetectionsByDepthMask(detections);
+    filterDetectionsByCircleFov(detections);
     return detections;
 }
 #endif

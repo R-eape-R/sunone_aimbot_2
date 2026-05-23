@@ -45,14 +45,14 @@ Arduino::Arduino(const std::string& port, unsigned int baud_rate)
 Arduino::~Arduino()
 {
     listening_ = false;
+    if (listening_thread_.joinable())
+    {
+        listening_thread_.join();
+    }
     if (serial_.isOpen())
     {
         try { serial_.close(); }
         catch (...) {}
-    }
-    if (listening_thread_.joinable())
-    {
-        listening_thread_.join();
     }
     is_open_ = false;
 }

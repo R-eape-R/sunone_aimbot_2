@@ -1,5 +1,10 @@
 ﻿#include <time.h>
 
+#include <atomic>
+#include <cctype>
+#include <cstring>
+#include <mutex>
+
 #include "kmbox_net/kmboxNet.h"
 #include "kmbox_net/HidTable.h"
 
@@ -12,7 +17,7 @@ client_tx rx;                         // Data to receive
 SOCKADDR_IN addrSrv;
 soft_mouse_t    softmouse;            // Software mouse data
 soft_keyboard_t softkeyboard;         // Software keyboard data
-static int monitor_run = 0;           // Whether physical mouse/keyboard monitoring is running
+static std::atomic<int> monitor_run{ 0 }; // Whether physical mouse/keyboard monitoring is running
 static int mask_keyboard_mouse_flag = 0; // Mouse/keyboard block status
 static short monitor_port = 0;
 
@@ -35,6 +40,17 @@ typedef struct {
 
 standard_mouse_report_t     hw_mouse;     // Hardware mouse message
 standard_keyboard_report_t  hw_keyboard;  // Hardware keyboard message
+
+static std::mutex g_kmNetCommandMutex;
+static std::mutex g_kmNetMonitorMutex;
+
+static void SetSocketReceiveTimeout(SOCKET socketFd, int timeoutMs = 250)
+{
+	if (socketFd == INVALID_SOCKET || socketFd <= 0)
+		return;
+
+	setsockopt(socketFd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeoutMs), sizeof(timeoutMs));
+}
 
 // Generate a random number between A and B
 int myrand(int a, int b)
@@ -84,6 +100,10 @@ Return value: 0 means success, non-zero values refer to error codes
 */
 int kmNet_init(char* ip, char* port, char* mac)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
+	if (!ip || !port || !mac || std::strlen(mac) < 8)
+		return err_net_cmd;
+
 	WORD wVersionRequested; WSADATA wsaData; int err;
 	wVersionRequested = MAKEWORD(1, 1);
 	err = WSAStartup(wVersionRequested, &wsaData);
@@ -94,6 +114,7 @@ int kmNet_init(char* ip, char* port, char* mac)
 	}
 	srand((unsigned)time(NULL));
 	sockClientfd = socket(AF_INET, SOCK_DGRAM, 0);
+	SetSocketReceiveTimeout(sockClientfd);
 	addrSrv.sin_addr.S_un.S_addr = inet_addr(ip);
 	addrSrv.sin_family = AF_INET;
 	addrSrv.sin_port = htons(atoi(port)); // Port UUID[1] >> 16 high 16 bits
@@ -119,6 +140,7 @@ Return value: 0 if successful, nonzero means error.
 */
 int kmNet_mouse_move(short x, short y)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;              // Command statistics value
@@ -148,6 +170,7 @@ Return value: 0 if successful, nonzero means error.
 */
 int kmNet_mouse_left(int isdown)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;              // Command statistics value
@@ -172,6 +195,7 @@ Return value: 0 if successful, nonzero means error.
 */
 int kmNet_mouse_middle(int isdown)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;              // Command statistics value
@@ -196,6 +220,7 @@ Return value: 0 if successful, nonzero means error.
 */
 int kmNet_mouse_right(int isdown)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;              // Command statistics value
@@ -216,6 +241,7 @@ int kmNet_mouse_right(int isdown)
 // Mouse wheel control
 int kmNet_mouse_wheel(int wheel)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;              // Command statistics value
@@ -240,6 +266,7 @@ Mouse full report control function
 */
 int kmNet_mouse_all(int button, int x, int y, int wheel)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;              // Command statistics value
@@ -275,6 +302,7 @@ Try to imitate human operation. Actual time may be less than 'ms'.
 */
 int kmNet_mouse_move_auto(int x, int y, int ms)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;                  // Command statistics value
@@ -305,6 +333,7 @@ x2, y2 : Control point p2 coordinates
 */
 int kmNet_mouse_move_beizer(int x, int y, int ms, int x1, int y1, int x2, int y2)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;               // Command statistics value
@@ -338,6 +367,7 @@ For regular keys, the function tries to add vk_key to the queue. If the queue is
 */
 int kmNet_keydown(int vk_key)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int i;
 	if (vk_key >= KEY_LEFTCONTROL && vk_key <= KEY_RIGHT_GUI) // Control key
 	{
@@ -370,7 +400,7 @@ int kmNet_keydown(int vk_key)
 			}
 		}
 		// Queue is full, remove the first one
-		memcpy(&softkeyboard.button[0], &softkeyboard.button[1], 10);
+		std::memmove(&softkeyboard.button[0], &softkeyboard.button[1], 9);
 		softkeyboard.button[9] = vk_key;
 	}
 KM_down_send:
@@ -393,6 +423,7 @@ KM_down_send:
 
 int kmNet_keyup(int vk_key)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int i;
 	if (vk_key >= KEY_LEFTCONTROL && vk_key <= KEY_RIGHT_GUI) // Control key
 	{
@@ -414,7 +445,7 @@ int kmNet_keyup(int vk_key)
 		{
 			if (softkeyboard.button[i] == vk_key) // vk_key found in the queue
 			{
-				memcpy(&softkeyboard.button[i], &softkeyboard.button[i + 1], 10 - i);
+				std::memmove(&softkeyboard.button[i], &softkeyboard.button[i + 1], 9 - i);
 				softkeyboard.button[9] = 0;
 				goto KM_up_send;
 			}
@@ -441,6 +472,7 @@ KM_up_send:
 // Reboot the box
 int kmNet_reboot(void)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;               // Command statistics value
@@ -467,6 +499,7 @@ DWORD WINAPI ThreadListenProcess(LPVOID lpParameter)
 	WSADATA wsaData; int ret;
 	WSAStartup(MAKEWORD(1, 1), &wsaData);            // Create socket, SOCK_DGRAM specifies UDP protocol
 	sockMonitorfd = socket(AF_INET, SOCK_DGRAM, 0);  // Bind socket
+	SetSocketReceiveTimeout(sockMonitorfd);
 	sockaddr_in servAddr;
 	memset(&servAddr, 0, sizeof(servAddr));          // Fill every byte with 0
 	servAddr.sin_family = PF_INET;                   // Use IPv4 address
@@ -476,20 +509,28 @@ DWORD WINAPI ThreadListenProcess(LPVOID lpParameter)
 	SOCKADDR cliAddr;  // Client address info
 	int nSize = sizeof(SOCKADDR);
 	char buff[1024];   // Buffer
-	monitor_run = monitor_ok;
+	monitor_run.store(monitor_ok);
 	while (1) {
+		nSize = sizeof(SOCKADDR);
 		int ret = recvfrom(sockMonitorfd, buff, 1024, 0, &cliAddr, &nSize); // Blocking read
-		if (ret > 0)
+		if (ret >= static_cast<int>(sizeof(hw_mouse) + sizeof(hw_keyboard)))
 		{
+			std::lock_guard<std::mutex> monitorLock(g_kmNetMonitorMutex);
 			memcpy(&hw_mouse, buff, sizeof(hw_mouse));                          // Physical mouse state
 			memcpy(&hw_keyboard, &buff[sizeof(hw_mouse)], sizeof(hw_keyboard)); // Physical keyboard state
+		}
+		else if (ret == SOCKET_ERROR && WSAGetLastError() == WSAETIMEDOUT)
+		{
+			if (monitor_run.load() == monitor_ok)
+				continue;
+			break;
 		}
 		else
 		{
 			break;
 		}
 	}
-	monitor_run = 0;
+	monitor_run.store(0);
 	sockMonitorfd = 0;
 	return 0;
 }
@@ -497,6 +538,7 @@ DWORD WINAPI ThreadListenProcess(LPVOID lpParameter)
 // Enable mouse and keyboard monitoring. Port number must be in range 1024–49151
 int kmNet_monitor(short port)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)       return err_creat_socket;
 	tx.head.indexpts++;              // Command statistics value
@@ -537,7 +579,8 @@ Return value:
 */
 int kmNet_monitor_mouse_left()
 {
-	if (monitor_run != monitor_ok) return -1;
+	if (monitor_run.load() != monitor_ok) return -1;
+	std::lock_guard<std::mutex> monitorLock(g_kmNetMonitorMutex);
 	return (hw_mouse.buttons & 0x01) ? 1 : 0;
 }
 
@@ -550,7 +593,8 @@ Return value:
 */
 int kmNet_monitor_mouse_middle()
 {
-	if (monitor_run != monitor_ok) return -1;
+	if (monitor_run.load() != monitor_ok) return -1;
+	std::lock_guard<std::mutex> monitorLock(g_kmNetMonitorMutex);
 	return (hw_mouse.buttons & 0x04) ? 1 : 0;
 }
 
@@ -563,7 +607,8 @@ Return value:
 */
 int kmNet_monitor_mouse_right()
 {
-	if (monitor_run != monitor_ok) return -1;
+	if (monitor_run.load() != monitor_ok) return -1;
+	std::lock_guard<std::mutex> monitorLock(g_kmNetMonitorMutex);
 	return (hw_mouse.buttons & 0x02) ? 1 : 0;
 }
 
@@ -576,7 +621,8 @@ Return value:
 */
 int kmNet_monitor_mouse_side1()
 {
-	if (monitor_run != monitor_ok) return -1;
+	if (monitor_run.load() != monitor_ok) return -1;
+	std::lock_guard<std::mutex> monitorLock(g_kmNetMonitorMutex);
 	return (hw_mouse.buttons & 0x08) ? 1 : 0;
 }
 
@@ -590,7 +636,8 @@ Return value:
 */
 int kmNet_monitor_mouse_side2()
 {
-	if (monitor_run != monitor_ok) return -1;
+	if (monitor_run.load() != monitor_ok) return -1;
+	std::lock_guard<std::mutex> monitorLock(g_kmNetMonitorMutex);
 	return (hw_mouse.buttons & 0x10) ? 1 : 0;
 }
 
@@ -599,7 +646,8 @@ int kmNet_monitor_mouse_side2()
 int kmNet_monitor_keyboard(short  vkey)
 {
 	unsigned char vk_key = vkey & 0xff;
-	if (monitor_run != monitor_ok) return -1;
+	if (monitor_run.load() != monitor_ok) return -1;
+	std::lock_guard<std::mutex> monitorLock(g_kmNetMonitorMutex);
 	if (vk_key >= KEY_LEFTCONTROL && vk_key <= KEY_RIGHT_GUI) // Control key
 	{
 		switch (vk_key)
@@ -633,6 +681,7 @@ Enable internal box debug printing and send to the specified port (for debugging
 */
 int kmNet_debug(short port, char enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -653,6 +702,7 @@ int kmNet_debug(short port, char enable)
 // Block (mask) mouse left button
 int kmNet_mask_mouse_left(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -671,6 +721,7 @@ int kmNet_mask_mouse_left(int enable)
 // Block (mask) mouse right button
 int kmNet_mask_mouse_right(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -689,6 +740,7 @@ int kmNet_mask_mouse_right(int enable)
 // Block (mask) mouse middle button
 int kmNet_mask_mouse_middle(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -707,6 +759,7 @@ int kmNet_mask_mouse_middle(int enable)
 // Block (mask) mouse side button 1
 int kmNet_mask_mouse_side1(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -726,6 +779,7 @@ int kmNet_mask_mouse_side1(int enable)
 // Block (mask) mouse side button 2
 int kmNet_mask_mouse_side2(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -744,6 +798,7 @@ int kmNet_mask_mouse_side2(int enable)
 // Block (mask) mouse X-axis
 int kmNet_mask_mouse_x(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -762,6 +817,7 @@ int kmNet_mask_mouse_x(int enable)
 // Block (mask) mouse Y-axis
 int kmNet_mask_mouse_y(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -780,6 +836,7 @@ int kmNet_mask_mouse_y(int enable)
 // Block (mask) mouse wheel
 int kmNet_mask_mouse_wheel(int enable)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -799,6 +856,7 @@ int kmNet_mask_mouse_wheel(int enable)
 // Block (mask) the specified keyboard key
 int kmNet_mask_keyboard(short vkey)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	BYTE v_key = vkey & 0xff;
 	if (sockClientfd <= 0)        return err_creat_socket;
@@ -819,6 +877,7 @@ int kmNet_mask_keyboard(short vkey)
 // Unblock the specified keyboard key
 int kmNet_unmask_keyboard(short vkey)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	BYTE v_key = vkey & 0xff;
 	if (sockClientfd <= 0)        return err_creat_socket;
@@ -839,6 +898,7 @@ int kmNet_unmask_keyboard(short vkey)
 // Unblock all previously set physical blocks
 int kmNet_unmask_all()
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -859,6 +919,7 @@ int kmNet_unmask_all()
 // Set configuration info (change IP and port)
 int kmNet_setconfig(char* ip, unsigned short port)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	tx.head.indexpts++;                   // Command statistics value
@@ -880,6 +941,7 @@ int kmNet_setconfig(char* ip, unsigned short port)
 // Fill the entire LCD screen with the specified color. Use black for clearing the screen.
 int kmNet_lcd_color(unsigned short rgb565)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	for (int y = 0; y < 40; y++)
@@ -904,6 +966,7 @@ int kmNet_lcd_color(unsigned short rgb565)
 // Display a 128x80 image at the bottom
 int kmNet_lcd_picture_bottom(unsigned char* buff_128_80)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	for (int y = 0; y < 20; y++)
@@ -926,6 +989,7 @@ int kmNet_lcd_picture_bottom(unsigned char* buff_128_80)
 // Display a 128x160 image at the bottom
 int kmNet_lcd_picture(unsigned char* buff_128_160)
 {
+	std::lock_guard<std::mutex> commandLock(g_kmNetCommandMutex);
 	int err;
 	if (sockClientfd <= 0)        return err_creat_socket;
 	for (int y = 0; y < 40; y++)

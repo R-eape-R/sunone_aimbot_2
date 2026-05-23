@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "capture.h"
+#include "capture/circle_fov.h"
 #include "Game_overlay.h"
 #include "mouse.h"
 #include "other_tools.h"
@@ -1010,19 +1011,20 @@ static void draw_aim_sim_panel(
 
 void gameOverlayRenderLoop()
 {
-    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-
     MONITORINFO mi{};
     mi.cbSize = sizeof(mi);
-    HMONITOR hPrimary = MonitorFromPoint(POINT{ 0,0 }, MONITOR_DEFAULTTOPRIMARY);
-    GetMonitorInfo(hPrimary, &mi);
+    int overlayMonitorIndex = 0;
+    {
+        std::lock_guard<std::mutex> cfgLock(configMutex);
+        overlayMonitorIndex = config.monitor_idx;
+    }
+    HMONITOR hTargetMonitor = GetMonitorHandleByIndex(overlayMonitorIndex);
+    if (!hTargetMonitor)
+        hTargetMonitor = MonitorFromPoint(POINT{ 0,0 }, MONITOR_DEFAULTTOPRIMARY);
+    GetMonitorInfo(hTargetMonitor, &mi);
     RECT pr = mi.rcMonitor;
     const int pw = pr.right - pr.left;
     const int ph = pr.bottom - pr.top;
-
-    const int offX = pr.left - vx;
-    const int offY = pr.top - vy;
 
 #ifdef USE_CUDA
     static depth_anything::DepthAnythingTrt depthDebugModel;
@@ -1068,14 +1070,14 @@ void gameOverlayRenderLoop()
         if (!gameOverlayPtr)
         {
             gameOverlayPtr = new Game_overlay();
-            gameOverlayPtr->SetWindowBounds(0, 0, pw, ph);
+            gameOverlayPtr->SetWindowBounds(pr.left, pr.top, pw, ph);
             gameOverlayPtr->SetMaxFPS(config.game_overlay_max_fps > 0 ? (unsigned)config.game_overlay_max_fps : 0);
             gameOverlayPtr->SetExcludeFromCapture(config.overlay_exclude_from_capture);
             gameOverlayPtr->Start();
         }
         else if (!gameOverlayPtr->IsRunning())
         {
-            gameOverlayPtr->SetWindowBounds(0, 0, pw, ph);
+            gameOverlayPtr->SetWindowBounds(pr.left, pr.top, pw, ph);
             gameOverlayPtr->SetMaxFPS(config.game_overlay_max_fps > 0 ? (unsigned)config.game_overlay_max_fps : 0);
             gameOverlayPtr->SetExcludeFromCapture(config.overlay_exclude_from_capture);
             gameOverlayPtr->Start();
@@ -1526,22 +1528,38 @@ void gameOverlayRenderLoop()
             float thickness = config.game_overlay_frame_thickness;
             if (thickness <= 0.f) thickness = 1.f;
 
-            if (config.circle_mask)
-            {
-                float cx = baseX + regionW * 0.5f;
-                float cy = baseY + regionH * 0.5f;
-                float radius = std::min(regionW, regionH) * 0.5f;
-                gameOverlayPtr->AddCircle({ cx, cy, radius }, col, thickness);
-            }
-            else
-            {
-                gameOverlayPtr->AddRect(
-                    { static_cast<float>(baseX),
-                      static_cast<float>(baseY),
-                      static_cast<float>(regionW),
-                      static_cast<float>(regionH) },
-                    col, thickness);
-            }
+            gameOverlayPtr->AddRect(
+                { static_cast<float>(baseX),
+                  static_cast<float>(baseY),
+                  static_cast<float>(regionW),
+                  static_cast<float>(regionH) },
+                col, thickness);
+        }
+
+        if (config.circle_fov_enabled && config.game_overlay_draw_circle_fov)
+        {
+            int A = config.game_overlay_frame_a;
+            int R = config.game_overlay_frame_r;
+            int G = config.game_overlay_frame_g;
+            int B = config.game_overlay_frame_b;
+            auto clamp255 = [](int& v) { if (v < 0) v = 0; else if (v > 255) v = 255; };
+            clamp255(A); clamp255(R); clamp255(G); clamp255(B);
+            const uint32_t col =
+                (uint32_t(A) << 24) |
+                (uint32_t(R) << 16) |
+                (uint32_t(G) << 8) |
+                uint32_t(B);
+
+            float thickness = config.game_overlay_frame_thickness;
+            if (thickness <= 0.f) thickness = 1.f;
+
+            const cv::Size regionSize(regionW, regionH);
+            const cv::Point2f center = getCircleFovCenter(regionSize);
+            const float radius = getCircleFovRadiusPixels(regionSize, config.circle_fov_radius_percent);
+            gameOverlayPtr->AddCircle(
+                { static_cast<float>(baseX) + center.x, static_cast<float>(baseY) + center.y, radius },
+                col,
+                thickness);
         }
 
         // BOXES

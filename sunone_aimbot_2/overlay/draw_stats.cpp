@@ -203,7 +203,8 @@ void draw_stats()
             ImGui::TextDisabled("Frame time: n/a");
 
         ImGui::Text("Frame queue depth: %d", static_cast<int>(queueDepth));
-        ImGui::Text("Circle mask: %s", config.circle_mask ? "on" : "off");
+        ImGui::Text("Circle FOV: %s", config.circle_fov_enabled ? "on" : "off");
+        ImGui::Text("Legacy pixel mask: %s", config.circle_mask ? "on" : "off");
 
 #ifdef USE_CUDA
         if (config.backend == "TRT")
@@ -222,7 +223,7 @@ void draw_stats()
             else if (!config.capture_use_cuda)
                 directCaptureStatus = "Disabled by user";
             else if (config.circle_mask)
-                directCaptureStatus = "CPU fallback (circle mask is enabled)";
+                directCaptureStatus = "CPU fallback (legacy pixel mask is enabled)";
             else if (depthMaskEnabled)
                 directCaptureStatus = "CPU fallback (depth mask is enabled)";
             else

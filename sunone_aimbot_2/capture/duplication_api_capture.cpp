@@ -284,7 +284,9 @@ DuplicationAPIScreenCapture::DuplicationAPIScreenCapture(int desiredWidth, int d
     regionWidth = std::clamp(regionWidth, 1, std::max(1, screenWidth));
     regionHeight = std::clamp(regionHeight, 1, std::max(1, screenHeight));
 
-    createStagingTextureCPU();
+    initialized_ = createStagingTextureCPU();
+    if (!initialized_)
+        return;
 #ifdef USE_CUDA
     createCudaInteropTexture();
 #endif
@@ -392,15 +394,25 @@ cv::Mat DuplicationAPIScreenCapture::GetNextFrameCpu()
 }
 
 #ifdef USE_CUDA
-bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra)
+static void SetGpuCaptureStatus(GpuCaptureStatus* status, GpuCaptureStatus value)
+{
+    if (status)
+        *status = value;
+}
+
+bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra, GpuCaptureStatus* status)
 {
     if (!m_ddaManager || !m_ddaManager->m_duplication || !interopTextureGPU || !cudaInteropResource || !cudaInteropReady)
+    {
+        SetGpuCaptureStatus(status, GpuCaptureStatus::NotReady);
         return false;
+    }
 
     FrameContext frameCtx;
     HRESULT hr = m_ddaManager->AcquireFrame(frameCtx, 5);
     if (hr == DXGI_ERROR_WAIT_TIMEOUT)
     {
+        SetGpuCaptureStatus(status, GpuCaptureStatus::Timeout);
         return false;
     }
     else if (hr == DXGI_ERROR_ACCESS_LOST ||
@@ -409,6 +421,7 @@ bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra
         hr == DXGI_ERROR_INVALID_CALL)
     {
         capture_method_changed.store(true);
+        SetGpuCaptureStatus(status, GpuCaptureStatus::DeviceLost);
         return false;
     }
     else if (FAILED(hr))
@@ -417,6 +430,7 @@ bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra
             << std::hex << hr << std::endl;
         if (frameCtx.hasAcquiredFrame)
             m_ddaManager->ReleaseFrame();
+        SetGpuCaptureStatus(status, GpuCaptureStatus::AcquireFailed);
         return false;
     }
 
@@ -424,6 +438,7 @@ bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra
     {
         if (frameCtx.hasAcquiredFrame)
             m_ddaManager->ReleaseFrame();
+        SetGpuCaptureStatus(status, GpuCaptureStatus::MissingTexture);
         return false;
     }
 
@@ -457,6 +472,7 @@ bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra
     {
         std::cerr << "[DDA] cudaGraphicsMapResources failed: " << cudaGetErrorString(cuErr) << std::endl;
         cudaInteropReady = false;
+        SetGpuCaptureStatus(status, GpuCaptureStatus::CudaMapFailed);
         return false;
     }
 
@@ -467,6 +483,7 @@ bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra
         std::cerr << "[DDA] cudaGraphicsSubResourceGetMappedArray failed: " << cudaGetErrorString(cuErr) << std::endl;
         cudaGraphicsUnmapResources(1, &cudaInteropResource, 0);
         cudaInteropReady = false;
+        SetGpuCaptureStatus(status, GpuCaptureStatus::CudaArrayFailed);
         return false;
     }
 
@@ -493,9 +510,11 @@ bool DuplicationAPIScreenCapture::GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra
     {
         std::cerr << "[DDA] cudaMemcpy2DFromArray failed: " << cudaGetErrorString(cuErr) << std::endl;
         cudaInteropReady = false;
+        SetGpuCaptureStatus(status, GpuCaptureStatus::CudaCopyFailed);
         return false;
     }
 
+    SetGpuCaptureStatus(status, GpuCaptureStatus::Captured);
     return true;
 }
 

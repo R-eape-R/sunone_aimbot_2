@@ -16,6 +16,7 @@
 #include "overlay/config_dirty.h"
 #include "include/other_tools.h"
 #include "capture.h"
+#include "capture/circle_fov.h"
 #include "overlay/ui_sections.h"
 
 #ifdef USE_CUDA
@@ -341,6 +342,17 @@ void draw_debug_frame()
     ImVec2 image_pos = ImGui::GetItemRectMin();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
+    if (config.circle_fov_enabled && config.circle_fov_show_preview)
+    {
+        const cv::Size imageSize(texW, texH);
+        const cv::Point2f center = getCircleFovCenter(imageSize);
+        const float radius = getCircleFovRadiusPixels(imageSize, config.circle_fov_radius_percent) * debug_scale;
+        const ImVec2 circleCenter(
+            image_pos.x + center.x * debug_scale,
+            image_pos.y + center.y * debug_scale);
+        draw_list->AddCircle(circleCenter, radius, IM_COL32(80, 220, 255, 230), 96, 2.0f);
+    }
+
 #ifdef USE_CUDA
     if (config.depth_mask_enabled)
     {
@@ -437,6 +449,14 @@ void draw_capture_preview()
         if (ImGui::Checkbox("Show Preview Window", &config.show_window))
         {
             OverlayConfig_MarkDirty();
+        }
+
+        if (config.circle_fov_enabled)
+        {
+            if (ImGui::Checkbox("Show Circle Guide", &config.circle_fov_show_preview))
+            {
+                OverlayConfig_MarkDirty();
+            }
         }
 
         if (config.show_window)

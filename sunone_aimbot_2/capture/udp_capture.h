@@ -26,6 +26,7 @@ public:
 
     bool Initialize();
     void Cleanup();
+    bool isInitialized() const { return initialized_.load(); }
 
     void SetUDPParams(const std::string& ip, int port);
     bool IsConnected() const { return is_connected_.load(); }
@@ -45,6 +46,7 @@ private:
     sockaddr_in server_addr_;
 
     std::atomic<bool> is_connected_;
+    std::atomic<bool> initialized_;
     std::atomic<bool> should_stop_;
     std::atomic<int> received_frames_;
     std::atomic<int> dropped_frames_;

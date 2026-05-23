@@ -12,6 +12,7 @@
 #include <timeapi.h>
 #include <condition_variable>
 #include <filesystem>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <queue>
@@ -84,6 +85,8 @@ struct CaptureThreadConfig
     int detection_resolution = 0;
     int monitor_idx = 0;
     bool circle_mask = false;
+    bool circle_fov_enabled = false;
+    int circle_fov_radius_percent = 100;
     bool capture_borders = true;
     bool capture_cursor = true;
     std::string capture_target;
@@ -119,6 +122,8 @@ CaptureThreadConfig SnapshotCaptureConfig()
     snapshot.detection_resolution = config.detection_resolution;
     snapshot.monitor_idx = config.monitor_idx;
     snapshot.circle_mask = config.circle_mask;
+    snapshot.circle_fov_enabled = config.circle_fov_enabled;
+    snapshot.circle_fov_radius_percent = config.circle_fov_radius_percent;
     snapshot.capture_borders = config.capture_borders;
     snapshot.capture_cursor = config.capture_cursor;
     snapshot.capture_target = config.capture_target;
@@ -145,6 +150,91 @@ CaptureThreadConfig SnapshotCaptureConfig()
 #endif
     return snapshot;
 }
+
+#ifdef USE_CUDA
+struct CudaCaptureDiagnostics
+{
+    uint64_t gpuAttempts = 0;
+    uint64_t gpuCaptured = 0;
+    uint64_t gpuTimeout = 0;
+    uint64_t gpuNotReady = 0;
+    uint64_t gpuDeviceLost = 0;
+    uint64_t gpuAcquireFailed = 0;
+    uint64_t gpuMissingTexture = 0;
+    uint64_t gpuCudaMapFailed = 0;
+    uint64_t gpuCudaArrayFailed = 0;
+    uint64_t gpuCudaCopyFailed = 0;
+    uint64_t gpuSubmitted = 0;
+    uint64_t gpuCpuCopies = 0;
+    uint64_t cpuFallbackAttempts = 0;
+    uint64_t cpuFallbackFrames = 0;
+    uint64_t cpuFallbackEmpty = 0;
+    uint64_t cpuPathFrames = 0;
+    uint64_t dmlSubmitted = 0;
+    uint64_t trtCpuSubmitted = 0;
+    bool lastPreferGpu = false;
+    bool lastNeedCpuCopy = false;
+    std::chrono::steady_clock::time_point lastLog = std::chrono::steady_clock::now();
+};
+
+void CountGpuCaptureStatus(CudaCaptureDiagnostics& diag, GpuCaptureStatus status)
+{
+    switch (status)
+    {
+    case GpuCaptureStatus::Captured: diag.gpuCaptured++; break;
+    case GpuCaptureStatus::NotReady: diag.gpuNotReady++; break;
+    case GpuCaptureStatus::Timeout: diag.gpuTimeout++; break;
+    case GpuCaptureStatus::DeviceLost: diag.gpuDeviceLost++; break;
+    case GpuCaptureStatus::AcquireFailed: diag.gpuAcquireFailed++; break;
+    case GpuCaptureStatus::MissingTexture: diag.gpuMissingTexture++; break;
+    case GpuCaptureStatus::CudaMapFailed: diag.gpuCudaMapFailed++; break;
+    case GpuCaptureStatus::CudaArrayFailed: diag.gpuCudaArrayFailed++; break;
+    case GpuCaptureStatus::CudaCopyFailed: diag.gpuCudaCopyFailed++; break;
+    }
+}
+
+void MaybeLogCudaCaptureDiagnostics(CudaCaptureDiagnostics& diag, const CaptureThreadConfig& cfg)
+{
+    if (!cfg.verbose)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now - diag.lastLog < std::chrono::seconds(2))
+        return;
+
+    diag.lastLog = now;
+    std::cout
+        << "[CaptureDiag] backend=" << cfg.backend
+        << " method=" << cfg.capture_method
+        << " capture_fps=" << cfg.capture_fps
+        << " use_cuda=" << (cfg.capture_use_cuda ? "true" : "false")
+        << " show_window=" << (cfg.show_window ? "true" : "false")
+        << " legacy_circle_mask=" << (cfg.circle_mask ? "true" : "false")
+        << " circle_fov=" << (cfg.circle_fov_enabled ? "true" : "false")
+        << " circle_fov_radius=" << cfg.circle_fov_radius_percent
+        << " prefer_gpu=" << (diag.lastPreferGpu ? "true" : "false")
+        << " need_cpu_copy=" << (diag.lastNeedCpuCopy ? "true" : "false")
+        << " gpu_attempts=" << diag.gpuAttempts
+        << " gpu_ok=" << diag.gpuCaptured
+        << " gpu_timeout=" << diag.gpuTimeout
+        << " gpu_not_ready=" << diag.gpuNotReady
+        << " gpu_lost=" << diag.gpuDeviceLost
+        << " gpu_acquire_failed=" << diag.gpuAcquireFailed
+        << " gpu_missing_tex=" << diag.gpuMissingTexture
+        << " cuda_map_failed=" << diag.gpuCudaMapFailed
+        << " cuda_array_failed=" << diag.gpuCudaArrayFailed
+        << " cuda_copy_failed=" << diag.gpuCudaCopyFailed
+        << " trt_gpu_submitted=" << diag.gpuSubmitted
+        << " gpu_cpu_copies=" << diag.gpuCpuCopies
+        << " cpu_fallback_attempts=" << diag.cpuFallbackAttempts
+        << " cpu_fallback_frames=" << diag.cpuFallbackFrames
+        << " cpu_fallback_empty=" << diag.cpuFallbackEmpty
+        << " cpu_path_frames=" << diag.cpuPathFrames
+        << " trt_cpu_submitted=" << diag.trtCpuSubmitted
+        << " dml_submitted=" << diag.dmlSubmitted
+        << std::endl;
+}
+#endif
 
 std::string NormalizeCaptureMethod(const std::string& method)
 {
@@ -342,7 +432,10 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                 {
                     if (cfg.verbose)
                         std::cout << "[Capture] Using Duplication API" << std::endl;
-                    return std::make_unique<DuplicationAPIScreenCapture>(width, height, cfg.monitor_idx);
+                    auto capture = std::make_unique<DuplicationAPIScreenCapture>(width, height, cfg.monitor_idx);
+                    if (!capture->isInitialized())
+                        return nullptr;
+                    return capture;
                 }
 
                 if (method == "winrt")
@@ -375,7 +468,10 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
 
                 if (cfg.verbose)
                     std::cout << "[Capture] Using UDP capture" << std::endl;
-                return std::make_unique<UDPCapture>(width, height, cfg.udp_ip, cfg.udp_port);
+                auto capture = std::make_unique<UDPCapture>(width, height, cfg.udp_ip, cfg.udp_port);
+                if (!capture->isInitialized())
+                    return nullptr;
+                return capture;
             }
             catch (const std::exception& e)
             {
@@ -467,6 +563,9 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
         };
 
         ScreenshotWriter screenshotWriter;
+#ifdef USE_CUDA
+        CudaCaptureDiagnostics cudaDiag;
+#endif
         auto lastSaveTime = std::chrono::steady_clock::now();
         auto lastSuccessfulFrameTime = std::chrono::steady_clock::now();
         constexpr auto staleFrameTimeout = std::chrono::milliseconds(500);
@@ -609,39 +708,76 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                 !currentCfg.circle_mask &&
                 !depthMaskEnabled;
 
+            cudaDiag.lastPreferGpu = preferGpuCapturePath;
+            cudaDiag.lastNeedCpuCopy = needCpuCopyFromGpu;
+
             if (preferGpuCapturePath)
             {
                 auto* duplicationCapture = dynamic_cast<DuplicationAPIScreenCapture*>(capturer.get());
                 if (duplicationCapture)
                 {
                     cv::cuda::GpuMat screenshotGpu;
-                    if (duplicationCapture->GetNextFrameGpu(screenshotGpu))
+                    GpuCaptureStatus gpuStatus = GpuCaptureStatus::NotReady;
+                    cudaDiag.gpuAttempts++;
+                    if (duplicationCapture->GetNextFrameGpu(screenshotGpu, &gpuStatus))
                     {
+                        CountGpuCaptureStatus(cudaDiag, gpuStatus);
                         trt_detector.processFrameGpu(screenshotGpu);
+                        cudaDiag.gpuSubmitted++;
                         frameSubmittedToDetector = true;
 
                         if (needCpuCopyFromGpu)
+                        {
                             screenshotGpu.download(screenshotCpu);
+                            cudaDiag.gpuCpuCopies++;
+                        }
                     }
+                    else
+                    {
+                        CountGpuCaptureStatus(cudaDiag, gpuStatus);
+                    }
+                }
+                else
+                {
+                    cudaDiag.gpuAttempts++;
+                    CountGpuCaptureStatus(cudaDiag, GpuCaptureStatus::NotReady);
                 }
             }
 #endif
 
             if (!frameSubmittedToDetector)
             {
+#ifdef USE_CUDA
+                const bool cpuFallbackFromGpu = cudaDiag.lastPreferGpu;
+                if (cpuFallbackFromGpu)
+                    cudaDiag.cpuFallbackAttempts++;
+#endif
                 screenshotCpu = capturer->GetNextFrameCpu();
 
                 if (screenshotCpu.empty())
                 {
+#ifdef USE_CUDA
+                    if (cpuFallbackFromGpu)
+                        cudaDiag.cpuFallbackEmpty++;
+#endif
                     const auto now = std::chrono::steady_clock::now();
                     if (now - lastSuccessfulFrameTime >= staleFrameTimeout)
                         setCaptureUnavailable();
 
                     if (!frameDuration.has_value())
                         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+#ifdef USE_CUDA
+                    MaybeLogCudaCaptureDiagnostics(cudaDiag, currentCfg);
+#endif
                     applyFrameLimiter();
                     continue;
                 }
+#ifdef USE_CUDA
+                if (cpuFallbackFromGpu)
+                    cudaDiag.cpuFallbackFrames++;
+                else
+                    cudaDiag.cpuPathFrames++;
+#endif
 
                 if (NormalizeCaptureMethod(currentCfg.capture_method) == "virtual_camera")
                 {
@@ -652,6 +788,9 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
 
                     if (roiW <= 0 || roiH <= 0)
                     {
+#ifdef USE_CUDA
+                        MaybeLogCudaCaptureDiagnostics(cudaDiag, currentCfg);
+#endif
                         applyFrameLimiter();
                         continue;
                     }
@@ -803,11 +942,15 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                 if (currentCfg.backend == "DML" && dml_detector)
                 {
                     dml_detector->processFrame(detectionFrame, screenshotCpu);
+#ifdef USE_CUDA
+                    cudaDiag.dmlSubmitted++;
+#endif
                 }
 #ifdef USE_CUDA
                 else if (currentCfg.backend == "TRT")
                 {
                     trt_detector.processFrame(detectionFrame, screenshotCpu);
+                    cudaDiag.trtCpuSubmitted++;
                 }
 #endif
             }
@@ -852,6 +995,9 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                 captureFpsStartTime = currentTime;
             }
 
+#ifdef USE_CUDA
+                MaybeLogCudaCaptureDiagnostics(cudaDiag, currentCfg);
+#endif
                 applyFrameLimiter();
             }
             catch (const std::exception& e)

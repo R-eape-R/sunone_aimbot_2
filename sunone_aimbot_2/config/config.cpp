@@ -61,7 +61,10 @@ bool Config::loadConfig(const std::string& filename)
         detection_resolution = 320;
         capture_fps = 60;
         monitor_idx = 0;
-        circle_mask = true;
+        circle_mask = false;
+        circle_fov_enabled = true;
+        circle_fov_radius_percent = 100;
+        circle_fov_show_preview = true;
         capture_borders = true;
         capture_cursor = true;
         virtual_camera_name = "None";
@@ -210,6 +213,7 @@ bool Config::loadConfig(const std::string& filename)
         game_overlay_draw_future = true;
         game_overlay_draw_wind_tail = true;
         game_overlay_draw_frame = true;
+        game_overlay_draw_circle_fov = true;
         game_overlay_show_target_correction = true;
         game_overlay_box_a = 255;
         game_overlay_box_r = 0;
@@ -386,7 +390,14 @@ bool Config::loadConfig(const std::string& filename)
 
     capture_fps = get_long("capture_fps", 60);
     monitor_idx = get_long("monitor_idx", 0);
-    circle_mask = get_bool("circle_mask", true);
+    const bool legacyCircleMask = get_bool("circle_mask", false);
+    const bool hasCircleFovSetting = ini.GetValue("", "circle_fov_enabled", nullptr) != nullptr;
+    circle_mask = hasCircleFovSetting ? legacyCircleMask : false;
+    circle_fov_enabled = get_bool("circle_fov_enabled", legacyCircleMask);
+    circle_fov_radius_percent = get_long("circle_fov_radius_percent", 100);
+    if (circle_fov_radius_percent < 1) circle_fov_radius_percent = 1;
+    if (circle_fov_radius_percent > 100) circle_fov_radius_percent = 100;
+    circle_fov_show_preview = get_bool("circle_fov_show_preview", true);
     capture_borders = get_bool("capture_borders", true);
     capture_cursor = get_bool("capture_cursor", true);
     virtual_camera_name = get_string("virtual_camera_name", "None");
@@ -543,6 +554,7 @@ bool Config::loadConfig(const std::string& filename)
     game_overlay_draw_future = get_bool("game_overlay_draw_future", true);
     game_overlay_draw_wind_tail = get_bool("game_overlay_draw_wind_tail", true);
     game_overlay_draw_frame = get_bool("game_overlay_draw_frame", true);
+    game_overlay_draw_circle_fov = get_bool("game_overlay_draw_circle_fov", true);
     game_overlay_show_target_correction = get_bool("game_overlay_show_target_correction", true);
     game_overlay_box_a = get_long("game_overlay_box_a", 255);
     game_overlay_box_r = get_long("game_overlay_box_r", 0);
@@ -660,6 +672,7 @@ bool Config::loadConfig(const std::string& filename)
 
     // Debug window
     show_window = get_bool("show_window", true);
+    show_fps = get_bool("show_fps", false);
     screenshot_button = splitString(get_string("screenshot_button", "None"));
     screenshot_delay = get_long("screenshot_delay", 500);
     verbose = get_bool("verbose", false);
@@ -696,6 +709,9 @@ bool Config::saveConfig(const std::string& filename)
         << "capture_fps = " << capture_fps << "\n"
         << "monitor_idx = " << monitor_idx << "\n"
         << "circle_mask = " << (circle_mask ? "true" : "false") << "\n"
+        << "circle_fov_enabled = " << (circle_fov_enabled ? "true" : "false") << "\n"
+        << "circle_fov_radius_percent = " << circle_fov_radius_percent << "\n"
+        << "circle_fov_show_preview = " << (circle_fov_show_preview ? "true" : "false") << "\n"
         << "capture_borders = " << (capture_borders ? "true" : "false") << "\n"
         << "capture_cursor = " << (capture_cursor ? "true" : "false") << "\n"
         << "virtual_camera_name = " << virtual_camera_name << "\n"
@@ -859,6 +875,7 @@ bool Config::saveConfig(const std::string& filename)
         << "game_overlay_draw_future = " << (game_overlay_draw_future ? "true" : "false") << "\n"
         << "game_overlay_draw_wind_tail = " << (game_overlay_draw_wind_tail ? "true" : "false") << "\n"
         << "game_overlay_draw_frame = " << (game_overlay_draw_frame ? "true" : "false") << "\n"
+        << "game_overlay_draw_circle_fov = " << (game_overlay_draw_circle_fov ? "true" : "false") << "\n"
         << "game_overlay_show_target_correction = " << (game_overlay_show_target_correction ? "true" : "false") << "\n"
         << "game_overlay_box_a = " << game_overlay_box_a << "\n"
         << "game_overlay_box_r = " << game_overlay_box_r << "\n"
@@ -938,6 +955,7 @@ bool Config::saveConfig(const std::string& filename)
     // Active game
     file << "# Active game profile\n";
     file << "active_game = " << active_game << "\n\n";
+    file << std::defaultfloat << std::setprecision(6);
     file << "[Games]\n";
     for (auto& kv : game_profiles)
     {
