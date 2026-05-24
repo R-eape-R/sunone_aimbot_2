@@ -34,6 +34,7 @@ float prev_kalman_additional_prediction_ms = config.kalman_additional_prediction
 float prev_kalman_reset_timeout_sec = config.kalman_reset_timeout_sec;
 float prev_snapRadius = config.snapRadius;
 float prev_nearRadius = config.nearRadius;
+float prev_closeRangeTransition = config.closeRangeTransition;
 float prev_speedCurveExponent = config.speedCurveExponent;
 float prev_snapBoostFactor = config.snapBoostFactor;
 
@@ -161,10 +162,14 @@ void draw_mouse()
 
     if (OverlayUI::BeginSection("Target correction", "mouse_section_target_correction"))
     {
-        ImGui::SliderFloat("Snap Radius", &config.snapRadius, 0.1f, 5.0f, "%.1f");
-        ImGui::SliderFloat("Near Radius", &config.nearRadius, 1.0f, 40.0f, "%.1f");
-        ImGui::SliderFloat("Speed Curve Exponent", &config.speedCurveExponent, 0.1f, 10.0f, "%.1f");
-        ImGui::SliderFloat("Snap Boost Factor", &config.snapBoostFactor, 0.01f, 4.00f, "%.2f");
+        bool targetCorrectionChanged = false;
+        targetCorrectionChanged |= ImGui::SliderFloat("Snap Radius", &config.snapRadius, 0.1f, 5.0f, "%.1f");
+        targetCorrectionChanged |= ImGui::SliderFloat("Near Radius", &config.nearRadius, 1.0f, 40.0f, "%.1f");
+        targetCorrectionChanged |= ImGui::SliderFloat("Close Transition", &config.closeRangeTransition, 0.0f, 80.0f, "%.1f");
+        targetCorrectionChanged |= ImGui::SliderFloat("Speed Curve Exponent", &config.speedCurveExponent, 0.1f, 10.0f, "%.1f");
+        targetCorrectionChanged |= ImGui::SliderFloat("Snap Boost Factor", &config.snapBoostFactor, 0.01f, 4.00f, "%.2f");
+        if (targetCorrectionChanged)
+            OverlayConfig_MarkDirty();
         OverlayUI::EndSection();
     }
 
@@ -890,6 +895,7 @@ void draw_mouse()
         prev_kalman_reset_timeout_sec != config.kalman_reset_timeout_sec ||
         prev_snapRadius != config.snapRadius ||
         prev_nearRadius != config.nearRadius ||
+        prev_closeRangeTransition != config.closeRangeTransition ||
         prev_speedCurveExponent != config.speedCurveExponent ||
         prev_snapBoostFactor != config.snapBoostFactor)
     {
@@ -910,6 +916,7 @@ void draw_mouse()
         prev_kalman_reset_timeout_sec = config.kalman_reset_timeout_sec;
         prev_snapRadius = config.snapRadius;
         prev_nearRadius = config.nearRadius;
+        prev_closeRangeTransition = config.closeRangeTransition;
         prev_speedCurveExponent = config.speedCurveExponent;
         prev_snapBoostFactor = config.snapBoostFactor;
 

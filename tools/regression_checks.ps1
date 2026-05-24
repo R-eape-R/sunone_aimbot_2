@@ -193,6 +193,22 @@ Assert-Contains $mouseSource 'MouseThread::mouseCountsToScreenPixels' `
     'Motion compensation must use the same game-profile conversion as the wind trail.'
 Assert-Contains $mouseSource 'currentDetectionDelaySec\(double observationAgeSec' `
     'Prediction delay compensation must use measured frame age when available.'
+Assert-Contains $configHeader 'float\s+closeRangeTransition' `
+    'Config header must expose close-range transition smoothing.'
+Assert-Contains $config 'closeRangeTransition\s*=\s*8\.0f' `
+    'Close-range transition smoothing must default enabled with a conservative pixel radius.'
+Assert-Contains $config 'get_double\("closeRangeTransition",\s*8\.0\)' `
+    'Config load must read close-range transition smoothing.'
+Assert-Contains $config 'closeRangeTransition < 0\.0f' `
+    'Config must clamp close-range transition smoothing to a non-negative radius.'
+Assert-Contains $config 'closeRangeTransition > 80\.0f' `
+    'Config must clamp close-range transition smoothing to a bounded radius.'
+Assert-Contains $config 'closeRangeTransition = ' `
+    'Config save must persist close-range transition smoothing.'
+Assert-Contains $mouseSource 'smoothstep' `
+    'Mouse movement must smooth close-range handoffs instead of hard-switching at range boundaries.'
+Assert-Contains $mouseSource 'closeRangeTransition' `
+    'Mouse movement must use the close-range transition smoothing config.'
 
 $keyboardListener = Read-Source 'sunone_aimbot_2/keyboard/keyboard_listener.cpp'
 Assert-Contains $keyboardListener 'config\.input_method == "TEENSY41_HID"' `

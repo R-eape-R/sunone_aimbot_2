@@ -100,6 +100,7 @@ bool Config::loadConfig(const std::string& filename)
 
         snapRadius = 1.5f;
         nearRadius = 25.0f;
+        closeRangeTransition = 8.0f;
         speedCurveExponent = 3.0f;
         snapBoostFactor = 1.15f;
 
@@ -459,6 +460,7 @@ bool Config::loadConfig(const std::string& filename)
     
     snapRadius = (float)get_double("snapRadius", 1.5);
     nearRadius = (float)get_double("nearRadius", 25.0);
+    closeRangeTransition = (float)get_double("closeRangeTransition", 8.0);
     speedCurveExponent = (float)get_double("speedCurveExponent", 3.0);
     snapBoostFactor = (float)get_double("snapBoostFactor", 1.15);
 
@@ -737,6 +739,8 @@ bool Config::loadConfig(const std::string& filename)
     if (pid_governor_blend > 100) pid_governor_blend = 100;
     if (pid_governor_lead_percent < 0) pid_governor_lead_percent = 0;
     if (pid_governor_lead_percent > 50) pid_governor_lead_percent = 50;
+    if (closeRangeTransition < 0.0f) closeRangeTransition = 0.0f;
+    if (closeRangeTransition > 80.0f) closeRangeTransition = 80.0f;
 
     // Classes
     class_player = get_long("class_player", 0);
@@ -824,6 +828,7 @@ bool Config::saveConfig(const std::string& filename)
 
         << "snapRadius = " << snapRadius << "\n"
         << "nearRadius = " << nearRadius << "\n"
+        << "closeRangeTransition = " << closeRangeTransition << "\n"
         << "speedCurveExponent = " << speedCurveExponent << "\n"
         << std::fixed << std::setprecision(2)
         << "snapBoostFactor = " << snapBoostFactor << "\n"

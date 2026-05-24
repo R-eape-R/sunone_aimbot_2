@@ -103,6 +103,7 @@ Use `circle_fov_enabled` for normal circular aim limiting and overlay visualizat
 | `kalman_reset_timeout_sec` | `0.5` | Resets tracking after this long without detections. |
 | `snapRadius` | `1.5` | Close target snap radius. |
 | `nearRadius` | `25.0` | Radius where near-target behavior starts. |
+| `closeRangeTransition` | `8.0` | Smooth transition radius around close-range movement boundaries. Set `0` for the old hard switch. |
 | `speedCurveExponent` | `3.0` | Curve shape for speed scaling. |
 | `snapBoostFactor` | `1.15` | Extra speed near snap radius. |
 | `easynorecoil` | `false` | Enables simple recoil compensation. |

@@ -36,6 +36,20 @@ aim::AimKalmanSettings buildKalmanSettingsFromConfig()
     settings.warmup_frames = config.kalman_warmup_frames;
     return settings;
 }
+
+double smoothstep(double edge0, double edge1, double value)
+{
+    if (edge1 <= edge0)
+        return value < edge0 ? 0.0 : 1.0;
+
+    const double t = std::clamp((value - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+double lerp(double a, double b, double t)
+{
+    return a + (b - a) * t;
+}
 }
 
 MouseThread::MouseThread(
@@ -634,20 +648,66 @@ std::pair<double, double> MouseThread::calc_movement(double tx, double ty)
 
 double MouseThread::calculate_speed_multiplier(double distance)
 {
-    if (distance < config.snapRadius)
-        return min_speed_multiplier * config.snapBoostFactor;
+    const double snapRadius = std::max(0.0, static_cast<double>(config.snapRadius));
+    const double nearRadius = std::max(snapRadius + 1e-6, static_cast<double>(config.nearRadius));
+    const double transitionRadius = std::clamp(static_cast<double>(config.closeRangeTransition), 0.0, 80.0);
+    const double curveExponent = std::max(0.001, static_cast<double>(config.speedCurveExponent));
 
-    if (distance < config.nearRadius)
+    auto nearSpeed = [&](double d)
     {
-        double t = distance / config.nearRadius;
-        double curve = 1.0 - std::pow(1.0 - t, config.speedCurveExponent);
+        double t = std::clamp(d / nearRadius, 0.0, 1.0);
+        double curve = 1.0 - std::pow(1.0 - t, curveExponent);
         return min_speed_multiplier +
             (max_speed_multiplier - min_speed_multiplier) * curve;
+    };
+
+    auto farSpeed = [&](double d)
+    {
+        double norm = std::clamp(d / max_distance, 0.0, 1.0);
+        return min_speed_multiplier +
+            (max_speed_multiplier - min_speed_multiplier) * norm;
+    };
+
+    const double snapSpeed = min_speed_multiplier * config.snapBoostFactor;
+
+    if (transitionRadius <= 1e-6)
+    {
+        if (distance < snapRadius)
+            return snapSpeed;
+
+        if (distance < nearRadius)
+            return nearSpeed(distance);
+
+        return farSpeed(distance);
     }
 
-    double norm = std::clamp(distance / max_distance, 0.0, 1.0);
-    return min_speed_multiplier +
-        (max_speed_multiplier - min_speed_multiplier) * norm;
+    const double snapBlendRadius = std::min(transitionRadius, std::max(0.0, (nearRadius - snapRadius) * 0.45));
+    if (snapBlendRadius > 1e-6 && distance < snapRadius + snapBlendRadius)
+    {
+        const double snapStart = std::max(0.0, snapRadius - snapBlendRadius);
+        if (distance <= snapStart)
+            return snapSpeed;
+
+        const double t = smoothstep(snapStart, snapRadius + snapBlendRadius, distance);
+        return lerp(snapSpeed, nearSpeed(distance), t);
+    }
+
+    if (distance < snapRadius)
+        return snapSpeed;
+
+    const double nearBlendRadius = std::min(transitionRadius, nearRadius * 0.5);
+    const double nearStart = std::max(snapRadius, nearRadius - nearBlendRadius);
+    const double nearEnd = nearRadius + nearBlendRadius;
+    if (distance < nearStart)
+        return nearSpeed(distance);
+
+    if (nearBlendRadius > 1e-6 && distance < nearEnd)
+    {
+        const double t = smoothstep(nearStart, nearEnd, distance);
+        return lerp(nearSpeed(distance), farSpeed(distance), t);
+    }
+
+    return farSpeed(distance);
 }
 
 bool MouseThread::check_target_in_scope(double target_x, double target_y, double target_w, double target_h, double reduction_factor)

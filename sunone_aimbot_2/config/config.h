@@ -56,6 +56,7 @@ public:
 
     float snapRadius;
     float nearRadius;
+    float closeRangeTransition;
     float speedCurveExponent;
     float snapBoostFactor;
 
