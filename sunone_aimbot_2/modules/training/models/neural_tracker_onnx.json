@@ -1,0 +1,32 @@
+{
+  "onnx_path": "C:\\Users\\donar\\sunone_aimbot_2\\training\\models\\neural_tracker.onnx",
+  "source_model": "C:\\Users\\donar\\sunone_aimbot_2\\training\\models\\neural_tracker.pt",
+  "input_name": "neural_tracker_features",
+  "output_name": "neural_tracker_score",
+  "input_shape": [
+    1,
+    16
+  ],
+  "output_shape": [
+    1,
+    1
+  ],
+  "feature_columns": [
+    "distance_norm",
+    "iou",
+    "size_log_ratio",
+    "detection_confidence",
+    "track_confidence",
+    "heading_alignment",
+    "track_missed_norm",
+    "track_hits_norm",
+    "is_locked",
+    "class_compatible",
+    "dt",
+    "speed_norm",
+    "target_size_norm",
+    "pivot_offset_x_norm",
+    "pivot_offset_y_norm",
+    "relaxed_gate"
+  ]
+}

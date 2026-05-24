@@ -1,0 +1,28 @@
+{
+  "model_path": "C:\\Users\\donar\\sunone_aimbot_2\\training\\models\\neural_tracker.pt",
+  "dataset": "C:\\Users\\donar\\sunone_aimbot_2\\training\\data\\neural_tracker_dataset.csv",
+  "samples": 20000,
+  "feature_columns": [
+    "distance_norm",
+    "iou",
+    "size_log_ratio",
+    "detection_confidence",
+    "track_confidence",
+    "heading_alignment",
+    "track_missed_norm",
+    "track_hits_norm",
+    "is_locked",
+    "class_compatible",
+    "dt",
+    "speed_norm",
+    "target_size_norm",
+    "pivot_offset_x_norm",
+    "pivot_offset_y_norm",
+    "relaxed_gate"
+  ],
+  "label_column": "label_match",
+  "hidden": 48,
+  "final_validation_bce": 0.0016927385004237294,
+  "final_validation_mae": 0.0014753122813999653,
+  "final_validation_accuracy": 0.9993333220481873
+}
