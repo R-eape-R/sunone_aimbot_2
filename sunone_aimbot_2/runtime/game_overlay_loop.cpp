@@ -37,6 +37,56 @@ namespace
 std::string g_lastIconPath;
 int g_iconImageId = 0;
 std::mutex g_iconMutex;
+
+struct GameOverlayMonitorBounds
+{
+    RECT rect{};
+    int width = 1;
+    int height = 1;
+};
+
+bool sameGameOverlayMonitorRect(const RECT& a, const RECT& b)
+{
+    return a.left == b.left &&
+        a.top == b.top &&
+        a.right == b.right &&
+        a.bottom == b.bottom;
+}
+
+GameOverlayMonitorBounds resolveGameOverlayMonitorBounds(int overlayMonitorIndex)
+{
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+
+    HMONITOR hTargetMonitor = GetMonitorHandleByIndex(overlayMonitorIndex);
+    if (!hTargetMonitor)
+        hTargetMonitor = MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+
+    GameOverlayMonitorBounds bounds{};
+    if (hTargetMonitor && GetMonitorInfo(hTargetMonitor, &mi))
+    {
+        bounds.rect = mi.rcMonitor;
+    }
+    else
+    {
+        bounds.rect.left = 0;
+        bounds.rect.top = 0;
+        bounds.rect.right = GetSystemMetrics(SM_CXSCREEN);
+        bounds.rect.bottom = GetSystemMetrics(SM_CYSCREEN);
+    }
+
+    bounds.width = std::max(1, static_cast<int>(bounds.rect.right - bounds.rect.left));
+    bounds.height = std::max(1, static_cast<int>(bounds.rect.bottom - bounds.rect.top));
+    return bounds;
+}
+
+void resetGameOverlayIconCache()
+{
+    std::lock_guard<std::mutex> lk(g_iconMutex);
+    g_lastIconPath.clear();
+    g_iconImageId = 0;
+    g_iconLastError.clear();
+}
 }
 static void draw_target_correction_demo_game_overlay(Game_overlay* overlay, float centerX, float centerY)
 {
@@ -1011,21 +1061,6 @@ static void draw_aim_sim_panel(
 
 void gameOverlayRenderLoop()
 {
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    int overlayMonitorIndex = 0;
-    {
-        std::lock_guard<std::mutex> cfgLock(configMutex);
-        overlayMonitorIndex = config.monitor_idx;
-    }
-    HMONITOR hTargetMonitor = GetMonitorHandleByIndex(overlayMonitorIndex);
-    if (!hTargetMonitor)
-        hTargetMonitor = MonitorFromPoint(POINT{ 0,0 }, MONITOR_DEFAULTTOPRIMARY);
-    GetMonitorInfo(hTargetMonitor, &mi);
-    RECT pr = mi.rcMonitor;
-    const int pw = pr.right - pr.left;
-    const int ph = pr.bottom - pr.top;
-
 #ifdef USE_CUDA
     static depth_anything::DepthAnythingTrt depthDebugModel;
     static std::string depthDebugModelPath;
@@ -1038,21 +1073,22 @@ void gameOverlayRenderLoop()
 #endif
     int lastDetectionVersion = -1;
     static AimSimulationState aimSimState;
+    int lastOverlayMonitorIndex = 0;
+    RECT lastOverlayMonitorRect{};
+    bool lastOverlayMonitorStateValid = false;
 
     while (!gameOverlayShouldExit.load())
     {
         if (!config.game_overlay_enabled)
         {
+            lastOverlayMonitorStateValid = false;
             aimSimState.initialized = false;
             if (gameOverlayPtr)
             {
                 gameOverlayPtr->Stop();
                 delete gameOverlayPtr;
                 gameOverlayPtr = nullptr;
-                std::lock_guard<std::mutex> lk(g_iconMutex);
-                g_lastIconPath.clear();
-                g_iconImageId = 0;
-                g_iconLastError.clear();
+                resetGameOverlayIconCache();
             }
 #ifdef USE_CUDA
             depthDebugModel.reset();
@@ -1066,6 +1102,33 @@ void gameOverlayRenderLoop()
             std::this_thread::sleep_for(std::chrono::milliseconds(150));
             continue;
         }
+
+        int overlayMonitorIndex = 0;
+        {
+            std::lock_guard<std::mutex> cfgLock(configMutex);
+            overlayMonitorIndex = config.monitor_idx;
+        }
+
+        const GameOverlayMonitorBounds overlayBounds = resolveGameOverlayMonitorBounds(overlayMonitorIndex);
+        RECT pr = overlayBounds.rect;
+        const int pw = overlayBounds.width;
+        const int ph = overlayBounds.height;
+        const bool overlayMonitorChanged = lastOverlayMonitorStateValid &&
+            (overlayMonitorIndex != lastOverlayMonitorIndex ||
+                !sameGameOverlayMonitorRect(lastOverlayMonitorRect, pr));
+
+        if (overlayMonitorChanged && gameOverlayPtr)
+        {
+            aimSimState.initialized = false;
+            gameOverlayPtr->Stop();
+            delete gameOverlayPtr;
+            gameOverlayPtr = nullptr;
+            resetGameOverlayIconCache();
+        }
+
+        lastOverlayMonitorIndex = overlayMonitorIndex;
+        lastOverlayMonitorRect = pr;
+        lastOverlayMonitorStateValid = true;
 
         if (!gameOverlayPtr)
         {

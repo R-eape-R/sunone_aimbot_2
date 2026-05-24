@@ -181,6 +181,12 @@ Assert-Contains $overlay 'OverlayConfig_SaveNow\(\);' `
 $gameOverlay = Read-Source 'sunone_aimbot_2/runtime/game_overlay_loop.cpp'
 Assert-Contains $gameOverlay 'GetMonitorHandleByIndex\(overlayMonitorIndex\)' `
     'Game overlay must use the configured capture monitor instead of always choosing primary.'
+Assert-Contains $gameOverlay 'resolveGameOverlayMonitorBounds' `
+    'Game overlay must recompute monitor bounds inside its render loop.'
+Assert-Contains $gameOverlay 'lastOverlayMonitorIndex' `
+    'Game overlay must track monitor changes while running.'
+Assert-Contains $gameOverlay 'overlayMonitorChanged' `
+    'Game overlay must refresh its window when monitor_idx changes at runtime.'
 Assert-Contains $gameOverlay 'SetWindowBounds\(pr\.left,\s*pr\.top,\s*pw,\s*ph\)' `
     'Game overlay window bounds must honor monitor offsets.'
 
