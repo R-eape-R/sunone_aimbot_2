@@ -890,6 +890,10 @@ void OverlayThread()
             }
             else
             {
+                {
+                    std::lock_guard<std::mutex> lock(configMutex);
+                    OverlayConfig_SaveNow();
+                }
                 ShowWindow(g_hwnd, SW_HIDE);
             }
 
@@ -1007,6 +1011,11 @@ void OverlayThread()
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        OverlayConfig_SaveNow();
     }
 
     release_body_texture();

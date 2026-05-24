@@ -7,6 +7,7 @@
 #include <limits>
 #include <algorithm>
 #include <numeric>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 
 #include "sunone_aimbot_2.h"
@@ -30,12 +31,24 @@ AimbotTarget* sortTargets(
     int screenHeight,
     bool disableHeadshot)
 {
-    if (boxes.empty() || classes.empty())
+    const size_t inputCount = std::min(boxes.size(), classes.size());
+    if (inputCount == 0)
     {
         return nullptr;
     }
 
     cv::Point center(screenWidth / 2, screenHeight / 2);
+    int classHead = 1;
+    int classPlayer = 0;
+    float headOffset = 0.05f;
+    float bodyOffset = 0.15f;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        classHead = config.class_head;
+        classPlayer = config.class_player;
+        headOffset = config.head_y_offset;
+        bodyOffset = config.body_y_offset;
+    }
 
     double minDistance = std::numeric_limits<double>::max();
     int nearestIdx = -1;
@@ -43,11 +56,14 @@ AimbotTarget* sortTargets(
 
     if (!disableHeadshot)
     {
-        for (size_t i = 0; i < boxes.size(); i++)
+        for (size_t i = 0; i < inputCount; i++)
         {
-            if (classes[i] == config.class_head)
+            if (boxes[i].width <= 0 || boxes[i].height <= 0)
+                continue;
+
+            if (classes[i] == classHead)
             {
-                int headOffsetY = static_cast<int>(boxes[i].height * config.head_y_offset);
+                int headOffsetY = static_cast<int>(boxes[i].height * headOffset);
                 cv::Point targetPoint(boxes[i].x + boxes[i].width / 2, boxes[i].y + headOffsetY);
                 double distance = std::pow(targetPoint.x - center.x, 2) + std::pow(targetPoint.y - center.y, 2);
                 if (distance < minDistance)
@@ -63,14 +79,17 @@ AimbotTarget* sortTargets(
     if (disableHeadshot || nearestIdx == -1)
     {
         minDistance = std::numeric_limits<double>::max();
-        for (size_t i = 0; i < boxes.size(); i++)
+        for (size_t i = 0; i < inputCount; i++)
         {
-            if (disableHeadshot && classes[i] == config.class_head)
+            if (boxes[i].width <= 0 || boxes[i].height <= 0)
                 continue;
 
-            if (classes[i] == config.class_player)
+            if (disableHeadshot && classes[i] == classHead)
+                continue;
+
+            if (classes[i] == classPlayer)
             {
-                int offsetY = static_cast<int>(boxes[i].height * config.body_y_offset);
+                int offsetY = static_cast<int>(boxes[i].height * bodyOffset);
                 cv::Point targetPoint(boxes[i].x + boxes[i].width / 2, boxes[i].y + offsetY);
                 double distance = std::pow(targetPoint.x - center.x, 2) + std::pow(targetPoint.y - center.y, 2);
                 if (distance < minDistance)
@@ -89,9 +108,9 @@ AimbotTarget* sortTargets(
     }
 
     int finalY = 0;
-    if (classes[nearestIdx] == config.class_head)
+    if (classes[nearestIdx] == classHead)
     {
-        int headOffsetY = static_cast<int>(boxes[nearestIdx].height * config.head_y_offset);
+        int headOffsetY = static_cast<int>(boxes[nearestIdx].height * headOffset);
         finalY = boxes[nearestIdx].y + headOffsetY - boxes[nearestIdx].height / 2;
     }
     else
@@ -200,36 +219,46 @@ void MultiTargetTracker::update(
     bool keepCurrentLock)
 {
     const auto now = std::chrono::steady_clock::now();
+    int classPlayer = 0;
+    int classHead = 1;
+    float bodyOffset = 0.15f;
+    float headOffset = 0.05f;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        classPlayer = config.class_player;
+        classHead = config.class_head;
+        bodyOffset = config.body_y_offset;
+        headOffset = config.head_y_offset;
+    }
 
     for (auto& t : tracks_)
         t.observedThisFrame = false;
 
-    if (boxes.size() != classes.size())
-    {
-        pruneDeadTracks();
-        return;
-    }
+    const size_t inputCount = std::min(boxes.size(), classes.size());
 
     std::vector<DetectionCandidate> dets;
-    dets.reserve(boxes.size());
-    for (size_t i = 0; i < boxes.size(); ++i)
+    dets.reserve(inputCount);
+    for (size_t i = 0; i < inputCount; ++i)
     {
         const int cls = classes[i];
         if (disableHeadshot)
         {
-            if (cls != config.class_player)
+            if (cls != classPlayer)
                 continue;
         }
         else
         {
-            if (cls != config.class_player && cls != config.class_head)
+            if (cls != classPlayer && cls != classHead)
             {
                 continue;
             }
         }
 
         const cv::Rect& b = boxes[i];
-        const double yOffset = (cls == config.class_head) ? config.head_y_offset : config.body_y_offset;
+        if (b.width <= 0 || b.height <= 0)
+            continue;
+
+        const double yOffset = (cls == classHead) ? headOffset : bodyOffset;
         DetectionCandidate d;
         d.box = cv::Rect2f(static_cast<float>(b.x), static_cast<float>(b.y), static_cast<float>(b.width), static_cast<float>(b.height));
         d.classId = cls;
@@ -246,7 +275,7 @@ void MultiTargetTracker::update(
         playerIdx.reserve(dets.size());
         for (size_t i = 0; i < dets.size(); ++i)
         {
-            if (dets[i].classId == config.class_player)
+            if (dets[i].classId == classPlayer)
                 playerIdx.push_back(i);
         }
 
@@ -261,7 +290,7 @@ void MultiTargetTracker::update(
             for (size_t hi = 0; hi < dets.size(); ++hi)
             {
                 const auto& h = dets[hi];
-                if (h.classId != config.class_head)
+                if (h.classId != classHead)
                     continue;
 
                 const double headCx = h.box.x + h.box.width * 0.5;
@@ -299,7 +328,7 @@ void MultiTargetTracker::update(
                         playerHasHeadPivot[bestPlayer] = 1;
                         playerHeadPivotDist[bestPlayer] = bestDist;
                         playerHeadPivotX[bestPlayer] = h.box.x + h.box.width * 0.5;
-                        playerHeadPivotY[bestPlayer] = h.box.y + h.box.height * config.head_y_offset;
+                        playerHeadPivotY[bestPlayer] = h.box.y + h.box.height * headOffset;
                     }
                 }
             }
@@ -313,7 +342,7 @@ void MultiTargetTracker::update(
                     continue;
 
                 DetectionCandidate d = dets[i];
-                if (d.classId == config.class_player && playerHasHeadPivot[i])
+                if (d.classId == classPlayer && playerHasHeadPivot[i])
                 {
                     d.pivotX = playerHeadPivotX[i];
                     d.pivotY = playerHeadPivotY[i];
@@ -331,16 +360,18 @@ void MultiTargetTracker::update(
     auto computeMatchScore = [&](const TrackState& t, const DetectionCandidate& d, bool relaxedForLocked) -> double
         {
             const bool sameClass = (d.classId == t.classId);
+            bool classSwappedWithinTarget = false;
             double classPenalty = 0.0;
             if (!sameClass)
             {
                 const bool allowHeadBodySwap =
                     !disableHeadshot &&
-                    ((t.classId == config.class_player && d.classId == config.class_head) ||
-                     (t.classId == config.class_head && d.classId == config.class_player));
+                    ((t.classId == classPlayer && d.classId == classHead) ||
+                     (t.classId == classHead && d.classId == classPlayer));
                 if (!allowHeadBodySwap)
                     return std::numeric_limits<double>::infinity();
 
+                classSwappedWithinTarget = true;
                 classPenalty = 0.18;
             }
 
@@ -355,7 +386,11 @@ void MultiTargetTracker::update(
 
             const double detCx = d.box.x + d.box.width * 0.5;
             const double detCy = d.box.y + d.box.height * 0.5;
-            const double dist = std::hypot(detCx - predCx, detCy - predCy);
+            const double boxDist = std::hypot(detCx - predCx, detCy - predCy);
+            const double predPivotX = t.pivotX + t.velocity.x * dt;
+            const double predPivotY = t.pivotY + t.velocity.y * dt;
+            const double pivotDist = std::hypot(d.pivotX - predPivotX, d.pivotY - predPivotY);
+            const double dist = classSwappedWithinTarget ? pivotDist : std::min(boxDist, pivotDist);
 
             const double diag = std::hypot(static_cast<double>(t.box.width), static_cast<double>(t.box.height));
             const double speed = std::hypot(t.velocity.x, t.velocity.y);
@@ -465,13 +500,13 @@ void MultiTargetTracker::update(
                 1e-4, 0.2
             );
 
-            const float oldCx = t.box.x + t.box.width * 0.5f;
-            const float oldCy = t.box.y + t.box.height * 0.5f;
-            const float newCx = d.box.x + d.box.width * 0.5f;
-            const float newCy = d.box.y + d.box.height * 0.5f;
+            const float oldX = static_cast<float>(t.pivotX);
+            const float oldY = static_cast<float>(t.pivotY);
+            const float newX = static_cast<float>(d.pivotX);
+            const float newY = static_cast<float>(d.pivotY);
             const cv::Point2f rawVel(
-                static_cast<float>((newCx - oldCx) / dt),
-                static_cast<float>((newCy - oldCy) / dt)
+                static_cast<float>((newX - oldX) / dt),
+                static_cast<float>((newY - oldY) / dt)
             );
 
             cv::Point2f clampedRawVel = rawVel;

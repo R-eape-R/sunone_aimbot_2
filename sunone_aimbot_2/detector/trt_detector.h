@@ -30,8 +30,11 @@ public:
     void processFrame(const cv::Mat& detection_frame, const cv::Mat& source_frame = cv::Mat());
     void processFrameGpu(const cv::cuda::GpuMat& frame);
     void inferenceThread();
+    void requestStop();
 
     float img_scale;
+    float img_scale_x;
+    float img_scale_y;
 
     std::vector<std::string> inputNames;
     std::vector<std::string> outputNames;

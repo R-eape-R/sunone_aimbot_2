@@ -92,7 +92,8 @@ std::vector<Detection> postProcessYolo(
 
     int64_t rows = shape[1];
     int64_t cols = shape[2];
-    const float img_scale = trt_detector.img_scale;
+    const float img_scale_x = trt_detector.img_scale_x;
+    const float img_scale_y = trt_detector.img_scale_y;
 
     if (cols == 6)
     {
@@ -112,10 +113,10 @@ std::vector<Detection> postProcessYolo(
                 float dy = det[3];
 
                 Detection detection;
-                detection.box.x = static_cast<int>(cx * img_scale);
-                detection.box.y = static_cast<int>(cy * img_scale);
-                detection.box.width = static_cast<int>((dx - cx) * img_scale);
-                detection.box.height = static_cast<int>((dy - cy) * img_scale);
+                detection.box.x = static_cast<int>(cx * img_scale_x);
+                detection.box.y = static_cast<int>(cy * img_scale_y);
+                detection.box.width = static_cast<int>((dx - cx) * img_scale_x);
+                detection.box.height = static_cast<int>((dy - cy) * img_scale_y);
                 detection.confidence = confidence;
                 detection.classId = classId;
 
@@ -152,10 +153,10 @@ std::vector<Detection> postProcessYolo(
                 const float half_oh = 0.5f * oh;
 
                 Detection det;
-                det.box.x = static_cast<int>((cx - half_ow) * img_scale);
-                det.box.y = static_cast<int>((cy - half_oh) * img_scale);
-                det.box.width = static_cast<int>(ow * img_scale);
-                det.box.height = static_cast<int>(oh * img_scale);
+                det.box.x = static_cast<int>((cx - half_ow) * img_scale_x);
+                det.box.y = static_cast<int>((cy - half_oh) * img_scale_y);
+                det.box.width = static_cast<int>(ow * img_scale_x);
+                det.box.height = static_cast<int>(oh * img_scale_y);
                 det.confidence = maxScore;
                 det.classId = maxClassId;
 

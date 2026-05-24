@@ -14,14 +14,11 @@
 
 #include "mouse.h"
 #include "capture.h"
-#include "Arduino.h"
-#include "RP2350.h"
 #include "sunone_aimbot_2.h"
-#include "ghub.h"
 
 namespace
 {
-aim::AimKalmanSettings buildKalmanSettingsFromConfig()
+aim::AimKalmanSettings buildKalmanSettingsFromConfigUnlocked()
 {
     aim::AimKalmanSettings settings;
     settings.enabled = config.kalman_enabled;
@@ -32,6 +29,12 @@ aim::AimKalmanSettings buildKalmanSettingsFromConfig()
     settings.max_velocity = static_cast<double>(config.kalman_max_velocity);
     settings.warmup_frames = config.kalman_warmup_frames;
     return settings;
+}
+
+aim::AimKalmanSettings buildKalmanSettingsFromConfig()
+{
+    std::lock_guard<std::mutex> lock(configMutex);
+    return buildKalmanSettingsFromConfigUnlocked();
 }
 }
 
@@ -44,12 +47,7 @@ MouseThread::MouseThread(
     double predictionInterval,
     bool auto_shoot,
     float bScope_multiplier,
-    Arduino* arduinoConnection,
-    RP2350* rp2350Connection,
-    GhubMouse* gHubMouse,
-    KmboxAConnection* Kmbox_A_Connection,
-    KmboxNetConnection* Kmbox_Net_Connection,
-    MakcuConnection* makcuConnection)
+    IMouseInput* mouseInputDevice)
     : screen_width(resolution),
     screen_height(resolution),
     prediction_interval(predictionInterval),
@@ -62,12 +60,7 @@ MouseThread::MouseThread(
     center_y(resolution / 2.0),
     auto_shoot(auto_shoot),
     bScope_multiplier(bScope_multiplier),
-    arduino(arduinoConnection),
-    rp2350(rp2350Connection),
-    kmbox_a(Kmbox_A_Connection),
-    kmbox_net(Kmbox_Net_Connection),
-    makcu(makcuConnection),
-    gHub(gHubMouse),
+    mouseInput(mouseInputDevice),
 
     prev_velocity_x(0.0),
     prev_velocity_y(0.0),
@@ -77,11 +70,14 @@ MouseThread::MouseThread(
     prev_time = std::chrono::steady_clock::time_point();
     last_target_time = std::chrono::steady_clock::now();
 
-    wind_mouse_enabled = config.wind_mouse_enabled;
-    wind_G = config.wind_G;
-    wind_W = config.wind_W;
-    wind_M = config.wind_M;
-    wind_D = config.wind_D;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        wind_mouse_enabled = config.wind_mouse_enabled;
+        wind_G = config.wind_G;
+        wind_W = config.wind_W;
+        wind_M = config.wind_M;
+        wind_D = config.wind_D;
+    }
     resetWindState();
     clearWindDebugTrail();
     targetKalman.setSettings(buildKalmanSettingsFromConfig());
@@ -119,7 +115,7 @@ void MouseThread::updateConfig(
     wind_M = config.wind_M; wind_D = config.wind_D;
     resetWindState();
     clearWindDebugTrail();
-    targetKalman.setSettings(buildKalmanSettingsFromConfig());
+    targetKalman.setSettings(buildKalmanSettingsFromConfigUnlocked());
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
@@ -372,7 +368,13 @@ void MouseThread::pruneWindDebugTrailLocked(const std::chrono::steady_clock::tim
 double MouseThread::currentDetectionDelaySec() const
 {
     double detectionDelaySec = 0.05;
-    if (config.backend == "DML")
+    std::string backend;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        backend = config.backend;
+    }
+
+    if (backend == "DML")
     {
         if (dml_detector)
             detectionDelaySec = dml_detector->lastInferenceTimeDML.count() * 0.001;
@@ -391,9 +393,17 @@ double MouseThread::currentDetectionDelaySec() const
 double MouseThread::currentPredictionLookaheadSec(double detectionDelaySec) const
 {
     double lookahead = std::max(0.0, prediction_interval);
-    if (config.kalman_compensate_detection_delay)
+    bool compensateDetectionDelay = false;
+    float additionalPredictionMs = 0.0f;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        compensateDetectionDelay = config.kalman_compensate_detection_delay;
+        additionalPredictionMs = config.kalman_additional_prediction_ms;
+    }
+
+    if (compensateDetectionDelay)
         lookahead += std::max(0.0, detectionDelaySec);
-    lookahead += static_cast<double>(config.kalman_additional_prediction_ms) * 0.001;
+    lookahead += static_cast<double>(additionalPredictionMs) * 0.001;
     return std::clamp(lookahead, 0.0, 1.5);
 }
 
@@ -445,40 +455,19 @@ void MouseThread::sendMovementToDriver(int dx, int dy)
         return;
     }
 
-    std::lock_guard<std::mutex> lock(input_method_mutex);
+    std::lock_guard<std::mutex> lock(inputDevicesMutex);
 
-    if (kmbox_net)
+    if (!mouseInput)
     {
-        kmbox_net->move(dx, dy);
+        return;
     }
-    else if (kmbox_a)
-    {
-        kmbox_a->move(dx, dy);
-    }
-    else if (makcu)
-    {
-        makcu->move(dx, dy);
-    }
-    else if (rp2350)
-    {
-        rp2350->move(dx, dy);
-    }
-    else if (arduino)
-    {
-        arduino->move(dx, dy);
-    }
-    else if (gHub)
-    {
-        gHub->mouse_xy(dx, dy);
-    }
-    else
-    {
-        INPUT in{ 0 };
-        in.type = INPUT_MOUSE;
-        in.mi.dx = dx;  in.mi.dy = dy;
-        in.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_VIRTUALDESK;
-        SendInput(1, &in, sizeof(INPUT));
-    }
+
+    mouseInput->move(dx, dy);
+}
+
+void MouseThread::moveRelative(int dx, int dy)
+{
+    sendMovementToDriver(dx, dy);
 }
 
 std::pair<double, double> MouseThread::calc_movement(double tx, double ty)
@@ -498,7 +487,11 @@ std::pair<double, double> MouseThread::calc_movement(double tx, double ty)
     double fps = static_cast<double>(captureFps.load());
     if (fps > 30.0) corr = 30.0 / fps;
 
-    auto counts_pair = config.degToCounts(mmx, mmy, fov_x);
+    std::pair<double, double> counts_pair;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        counts_pair = config.degToCounts(mmx, mmy, fov_x);
+    }
     double move_x = counts_pair.first * speed * corr;
     double move_y = counts_pair.second * speed * corr;
 
@@ -507,13 +500,25 @@ std::pair<double, double> MouseThread::calc_movement(double tx, double ty)
 
 double MouseThread::calculate_speed_multiplier(double distance)
 {
-    if (distance < config.snapRadius)
-        return min_speed_multiplier * config.snapBoostFactor;
-
-    if (distance < config.nearRadius)
+    float snapRadius = 0.0f;
+    float nearRadius = 0.0f;
+    float speedCurveExponent = 1.0f;
+    float snapBoostFactor = 1.0f;
     {
-        double t = distance / config.nearRadius;
-        double curve = 1.0 - std::pow(1.0 - t, config.speedCurveExponent);
+        std::lock_guard<std::mutex> lock(configMutex);
+        snapRadius = config.snapRadius;
+        nearRadius = config.nearRadius;
+        speedCurveExponent = config.speedCurveExponent;
+        snapBoostFactor = config.snapBoostFactor;
+    }
+
+    if (distance < snapRadius)
+        return min_speed_multiplier * snapBoostFactor;
+
+    if (nearRadius > 0.0f && distance < nearRadius)
+    {
+        double t = distance / nearRadius;
+        double curve = 1.0 - std::pow(1.0 - t, speedCurveExponent);
         return min_speed_multiplier +
             (max_speed_multiplier - min_speed_multiplier) * curve;
     }
@@ -584,119 +589,45 @@ void MouseThread::clearQueuedMoves()
 
 void MouseThread::pressMouse(const AimbotTarget& target)
 {
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-
     bool bScope = check_target_in_scope(target.x, target.y, target.w, target.h, bScope_multiplier);
     if (bScope && !mouse_pressed)
     {
-        if (kmbox_net)
+        std::lock_guard<std::mutex> lock(inputDevicesMutex);
+        if (!mouseInput)
         {
-            kmbox_net->leftDown();
+            return;
         }
-        else if (kmbox_a)
-        {
-            kmbox_a->leftDown();
-        }
-        else if (makcu)
-        {
-            makcu->press(0);
-        }
-        else if (rp2350)
-        {
-            rp2350->press();
-        }
-        else if (arduino)
-        {
-            arduino->press();
-        }
-        else if (gHub)
-        {
-            gHub->mouse_down();
-        }
-        else
-        {
-            INPUT input = { 0 };
-            input.type = INPUT_MOUSE;
-            input.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-            SendInput(1, &input, sizeof(INPUT));
-        }
-        mouse_pressed = true;
+
+        if (mouseInput->leftDown())
+            mouse_pressed = true;
     }
     else if (!bScope && mouse_pressed)
     {
-        if (kmbox_net)
+        std::lock_guard<std::mutex> lock(inputDevicesMutex);
+        if (!mouseInput)
         {
-            kmbox_net->leftUp();
+            mouse_pressed = false;
+            return;
         }
-        else if (kmbox_a)
-        {
-            kmbox_a->leftUp();
-        }
-        else if (makcu)
-        {
-            makcu->release(0);
-        }
-        else if (rp2350)
-        {
-            rp2350->release();
-        }
-        else if (arduino)
-        {
-            arduino->release();
-        }
-        else if (gHub)
-        {
-            gHub->mouse_up();
-        }
-        else
-        {
-            INPUT input = { 0 };
-            input.type = INPUT_MOUSE;
-            input.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-            SendInput(1, &input, sizeof(INPUT));
-        }
-        mouse_pressed = false;
+
+        if (mouseInput->leftUp())
+            mouse_pressed = false;
     }
 }
 
 void MouseThread::releaseMouse()
 {
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-
     if (mouse_pressed)
     {
-        if (kmbox_net)
+        std::lock_guard<std::mutex> lock(inputDevicesMutex);
+        if (!mouseInput)
         {
-            kmbox_net->leftUp();
+            mouse_pressed = false;
+            return;
         }
-        else if (kmbox_a)
-        {
-            kmbox_a->leftUp();
-        }
-        else if (makcu)
-        {
-            makcu->release(0);
-        }
-        else if (rp2350)
-        {
-            rp2350->release();
-        }
-        else if (arduino)
-        {
-            arduino->release();
-        }
-        else if (gHub)
-        {
-            gHub->mouse_up();
-        }
-        else
-        {
-            INPUT input = { 0 };
-            input.type = INPUT_MOUSE;
-            input.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-            SendInput(1, &input, sizeof(INPUT));
-        }
-        mouse_pressed = false;
+
+        if (mouseInput->leftUp())
+            mouse_pressed = false;
     }
 }
 
@@ -718,7 +649,12 @@ void MouseThread::checkAndResetPredictions()
 {
     auto current_time = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(current_time - last_target_time).count();
-    const double timeoutSec = std::clamp(static_cast<double>(config.kalman_reset_timeout_sec), 0.05, 3.0);
+    double resetTimeoutSec = 0.5;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        resetTimeoutSec = static_cast<double>(config.kalman_reset_timeout_sec);
+    }
+    const double timeoutSec = std::clamp(resetTimeoutSec, 0.05, 3.0);
 
     if (elapsed > timeoutSec && target_detected.load())
     {
@@ -816,38 +752,8 @@ std::vector<std::pair<double, double>> MouseThread::getWindDebugTrail()
     return out;
 }
 
-void MouseThread::setArduinoConnection(Arduino* newArduino)
+void MouseThread::setMouseInput(IMouseInput* newMouseInput)
 {
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-    arduino = newArduino;
-}
-
-void MouseThread::setRP2350Connection(RP2350* newRP2350)
-{
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-    rp2350 = newRP2350;
-}
-
-void MouseThread::setKmboxAConnection(KmboxAConnection* newKmbox_a)
-{
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-    kmbox_a = newKmbox_a;
-}
-
-void MouseThread::setKmboxNetConnection(KmboxNetConnection* newKmbox_net)
-{
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-    kmbox_net = newKmbox_net;
-}
-
-void MouseThread::setMakcuConnection(MakcuConnection* newMakcu)
-{
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-    makcu = newMakcu;
-}
-
-void MouseThread::setGHubMouse(GhubMouse* newGHub)
-{
-    std::lock_guard<std::mutex> lock(input_method_mutex);
-    gHub = newGHub;
+    std::lock_guard<std::mutex> lock(inputDevicesMutex);
+    mouseInput = newMouseInput;
 }

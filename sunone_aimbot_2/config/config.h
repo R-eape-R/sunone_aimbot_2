@@ -58,7 +58,7 @@ public:
 
     bool easynorecoil;
     float easynorecoilstrength;
-    std::string input_method; // "WIN32", "GHUB", "ARDUINO", "RP2350", "KMBOX_NET", "KMBOX_A", "MAKCU"
+    std::string input_method; // "WIN32", "GHUB", "RAZER", "ARDUINO", "RP2350", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU"
 
     // Wind mouse
     bool wind_mouse_enabled;
@@ -78,6 +78,18 @@ public:
     std::string rp2350_port;
     bool rp2350_16_bit_mouse;
     bool rp2350_enable_keys;
+
+    // Teensy 4.1 RawHID generic mouse bridge
+    std::string teensy_hid_manufacturer;
+    std::string teensy_hid_product;
+    std::string teensy_hid_serial;
+    std::string teensy_hid_vid_filter;
+    std::string teensy_hid_pid_filter;
+    int teensy_hid_usage_page;
+    int teensy_hid_usage_id;
+    int teensy_hid_open_index;
+    int teensy_hid_packet_timeout_ms;
+    int teensy_hid_reconnect_interval_ms;
 
     // kmbox_net
     std::string kmbox_net_ip;

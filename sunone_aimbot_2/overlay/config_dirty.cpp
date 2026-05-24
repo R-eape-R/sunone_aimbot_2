@@ -33,3 +33,12 @@ void OverlayConfig_TrySave(const char* filename)
     config.saveConfig(filename ? filename : "config.ini");
     cfgDirty = false;
 }
+
+void OverlayConfig_SaveNow(const char* filename)
+{
+    if (!cfgDirty)
+        return;
+
+    config.saveConfig(filename ? filename : "config.ini");
+    cfgDirty = false;
+}

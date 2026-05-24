@@ -17,6 +17,7 @@
 #include <random>
 #include <array>
 #include <cwchar>
+#include <memory>
 
 #include "capture.h"
 #include "mouse.h"
@@ -42,6 +43,7 @@ std::atomic<bool> shouldExit(false);
 std::atomic<bool> aiming(false);
 std::atomic<bool> detectionPaused(false);
 std::mutex configMutex;
+std::mutex inputDevicesMutex;
 
 #ifdef USE_CUDA
 TrtDetector trt_detector;
@@ -53,11 +55,13 @@ Config config;
 
 
 GhubMouse* gHub = nullptr;
+RzctlMouse* razerControl = nullptr;
 Arduino* arduinoSerial = nullptr;
 RP2350* rp2350Serial = nullptr;
 KmboxNetConnection* kmboxNetSerial = nullptr;
 KmboxAConnection* kmboxASerial = nullptr;
 MakcuConnection* makcuSerial = nullptr;
+std::unique_ptr<IMouseInput> activeMouseInputOwner;
 
 std::atomic<bool> detection_resolution_changed(false);
 std::atomic<bool> capture_method_changed(false);
@@ -124,6 +128,10 @@ static void HandleThreadCrash(const char* name, const std::exception* ex)
               << (ex ? ex->what() : "unknown exception") << std::endl;
     shouldExit = true;
     gameOverlayShouldExit.store(true);
+#ifdef USE_CUDA
+    trt_detector.requestStop();
+#endif
+    frameCV.notify_all();
     detectionBuffer.cv.notify_all();
 }
 
@@ -148,123 +156,47 @@ static std::thread StartThreadGuarded(const char* name, Func func)
 
 void createInputDevices()
 {
-    if (arduinoSerial)
+    if (globalMouseThread)
+        globalMouseThread->setMouseInput(nullptr);
+
+    Config cfgSnapshot;
     {
-        delete arduinoSerial;
-        arduinoSerial = nullptr;
+        std::lock_guard<std::mutex> cfgLock(configMutex);
+        cfgSnapshot = config;
     }
 
-    if (gHub)
-    {
-        gHub->mouse_close();
-        delete gHub;
-        gHub = nullptr;
-    }
+    std::lock_guard<std::mutex> deviceLock(inputDevicesMutex);
 
-    if (rp2350Serial)
-    {
-        delete rp2350Serial;
-        rp2350Serial = nullptr;
-    }
+    activeMouseInputOwner.reset();
+    arduinoSerial = nullptr;
+    rp2350Serial = nullptr;
+    gHub = nullptr;
+    razerControl = nullptr;
+    kmboxNetSerial = nullptr;
+    kmboxASerial = nullptr;
+    makcuSerial = nullptr;
 
-    if (kmboxNetSerial)
-    {
-        delete kmboxNetSerial;
-        kmboxNetSerial = nullptr;
-    }
+    activeMouseInputOwner = CreateMouseInputDevice(cfgSnapshot);
 
-    if (kmboxASerial)
-    {
-        delete kmboxASerial;
-        kmboxASerial = nullptr;
-    }
+    arduinoSerial = activeMouseInputOwner->arduino();
+    rp2350Serial = activeMouseInputOwner->rp2350();
+    gHub = activeMouseInputOwner->ghub();
+    razerControl = activeMouseInputOwner->razer();
+    kmboxNetSerial = activeMouseInputOwner->kmboxNet();
+    kmboxASerial = activeMouseInputOwner->kmboxA();
+    makcuSerial = activeMouseInputOwner->makcu();
 
-    if (makcuSerial)
-    {
-        delete makcuSerial;
-        makcuSerial = nullptr;
-    }
-
-    if (config.input_method == "ARDUINO")
-    {
-        std::cout << "[Mouse] Using Arduino method input." << std::endl;
-        arduinoSerial = new Arduino(config.arduino_port, config.arduino_baudrate);
-    }
-    else if (config.input_method == "RP2350")
-    {
-        std::cout << "[Mouse] Using RP2350 method input." << std::endl;
-        rp2350Serial = new RP2350(config.rp2350_port, config.rp2350_baudrate);
-        if (!rp2350Serial->isOpen())
-        {
-            std::cerr << "[RP2350] Error connecting." << std::endl;
-            delete rp2350Serial;
-            rp2350Serial = nullptr;
-        }
-    }
-    else if (config.input_method == "GHUB")
-    {
-        std::cout << "[Mouse] Using Ghub method input." << std::endl;
-        gHub = new GhubMouse();
-        if (!gHub->mouse_xy(0, 0))
-        {
-            std::cerr << "[Ghub] Error with opening mouse." << std::endl;
-            delete gHub;
-            gHub = nullptr;
-        }
-    }
-    else if (config.input_method == "KMBOX_NET")
-    {
-        std::cout << "[Mouse] Using KMBOX_NET input." << std::endl;
-        kmboxNetSerial = new KmboxNetConnection(config.kmbox_net_ip, config.kmbox_net_port, config.kmbox_net_uuid);
-        if (!kmboxNetSerial->isOpen())
-        {
-            std::cerr << "[KmboxNet] Error connecting." << std::endl;
-            delete kmboxNetSerial; kmboxNetSerial = nullptr;
-        }
-    }
-    else if (config.input_method == "KMBOX_A")
-    {
-        std::cout << "[Mouse] Using KMBOX_A input." << std::endl;
-        if (config.kmbox_a_pidvid.empty())
-        {
-            std::cerr << "[KmboxA] PIDVID is empty." << std::endl;
-            return;
-        }
-        kmboxASerial = new KmboxAConnection(config.kmbox_a_pidvid);
-        if (!kmboxASerial->isOpen())
-        {
-            std::cerr << "[KmboxA] Error connecting." << std::endl;
-            delete kmboxASerial;
-            kmboxASerial = nullptr;
-        }
-    }
-    else if (config.input_method == "MAKCU")
-    {
-        std::cout << "[Mouse] Using MAKCU input." << std::endl;
-        makcuSerial = new MakcuConnection(config.makcu_port, config.makcu_baudrate);
-        if (!makcuSerial->isOpen())
-        {
-            std::cerr << "[Makcu] Error connecting." << std::endl;
-            delete makcuSerial;
-            makcuSerial = nullptr;
-        }
-    }
-    else
-    {
-        std::cout << "[Mouse] Using default Win32 method input." << std::endl;
-    }
+    std::string message = std::string("[Mouse] Using ") + activeMouseInputOwner->name() + " input.";
+    if (!activeMouseInputOwner->isOpen())
+        message += " Device not connected; input disabled until the selected method is available.";
+    std::cout << message << std::endl;
 }
 
 void assignInputDevices()
 {
     if (globalMouseThread)
     {
-        globalMouseThread->setArduinoConnection(arduinoSerial);
-        globalMouseThread->setRP2350Connection(rp2350Serial);
-        globalMouseThread->setGHubMouse(gHub);
-        globalMouseThread->setKmboxAConnection(kmboxASerial);
-        globalMouseThread->setKmboxNetConnection(kmboxNetSerial);
-        globalMouseThread->setMakcuConnection(makcuSerial);
+        globalMouseThread->setMouseInput(activeMouseInputOwner.get());
     }
 }
 
@@ -423,12 +355,7 @@ int main()
             config.predictionInterval,
             config.auto_shoot,
             config.bScope_multiplier,
-            arduinoSerial,
-            rp2350Serial,
-            gHub,
-            kmboxASerial,
-            kmboxNetSerial,
-            makcuSerial
+            activeMouseInputOwner.get()
         );
 
         globalMouseThread = &mouseThread;
@@ -489,32 +416,22 @@ int main()
         }
 
 #ifdef USE_CUDA
+        trt_detector.requestStop();
         trt_detThread.join();
 #endif
         mouseMovThread.join();
         overlayThread.join();
 
-        if (arduinoSerial)
         {
-            delete arduinoSerial;
-        }
-
-        if (rp2350Serial)
-        {
-            delete rp2350Serial;
+            std::lock_guard<std::mutex> deviceLock(inputDevicesMutex);
+            activeMouseInputOwner.reset();
+            arduinoSerial = nullptr;
             rp2350Serial = nullptr;
-        }
-
-        if (gHub)
-        {
-            gHub->mouse_close();
-            delete gHub;
-        }
-
-        if (kmboxASerial)
-        {
-            delete kmboxASerial;
+            gHub = nullptr;
+            razerControl = nullptr;
+            kmboxNetSerial = nullptr;
             kmboxASerial = nullptr;
+            makcuSerial = nullptr;
         }
 
         if (dml_detector)

@@ -72,13 +72,23 @@ void filterDetectionsByDepthMask(std::vector<Detection>& detections)
     if (detections.empty())
         return;
 
-    if (!config.depth_inference_enabled || !config.depth_mask_enabled)
+    bool depthInferenceEnabled = false;
+    bool depthMaskEnabled = false;
+    int depthMaskHoldFrames = 0;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        depthInferenceEnabled = config.depth_inference_enabled;
+        depthMaskEnabled = config.depth_mask_enabled;
+        depthMaskHoldFrames = config.depth_mask_hold_frames;
+    }
+
+    if (!depthInferenceEnabled || !depthMaskEnabled)
     {
         holdTtl.release();
         return;
     }
 
-    const int holdFrames = std::clamp(config.depth_mask_hold_frames, 0, 120);
+    const int holdFrames = std::clamp(depthMaskHoldFrames, 0, 120);
     cv::Mat currentMask = getCurrentDetectionSuppressionMask();
     cv::Mat suppressionMask;
 
@@ -149,15 +159,23 @@ DirectMLDetector::DirectMLDetector(const std::string& model_path)
     env(ORT_LOGGING_LEVEL_WARNING, "DML_Detector"),
     memory_info(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
 {
+    int dmlDeviceId = 0;
+    bool verbose = false;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        dmlDeviceId = config.dml_device_id;
+        verbose = config.verbose;
+    }
+
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     session_options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
     session_options.SetIntraOpNumThreads(1);
     session_options.SetInterOpNumThreads(1);
 
-    Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(session_options, config.dml_device_id));
+    Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(session_options, dmlDeviceId));
 
-    if (config.verbose)
-        std::cout << "[DirectML] Using adapter: " << GetDMLDeviceName(config.dml_device_id) << std::endl;
+    if (verbose)
+        std::cout << "[DirectML] Using adapter: " << GetDMLDeviceName(dmlDeviceId) << std::endl;
 
     initializeModel(model_path);
 }
@@ -183,9 +201,16 @@ void DirectMLDetector::initializeModel(const std::string& model_path)
     bool isStatic = true;
     for (auto d : input_shape) if (d <= 0) isStatic = false;
 
-    if (isStatic != config.fixed_input_size)
+    bool shouldUpdateFixedInput = false;
     {
-        config.fixed_input_size = isStatic;
+        std::lock_guard<std::mutex> lock(configMutex);
+        shouldUpdateFixedInput = (isStatic != config.fixed_input_size);
+        if (shouldUpdateFixedInput)
+            config.fixed_input_size = isStatic;
+    }
+
+    if (shouldUpdateFixedInput)
+    {
         detector_model_changed.store(true);
         std::cout << "[DML] Automatically set fixed_input_size = " << (isStatic ? "true" : "false") << std::endl;
     }
@@ -225,10 +250,21 @@ std::vector<std::vector<Detection>> DirectMLDetector::detectBatch(const std::vec
             model_w = converted;
         }
     }
-    const bool useFixed = config.fixed_input_size && model_h > 0 && model_w > 0;
+    bool fixedInputSize = false;
+    int detectionResolution = 0;
+    float conf_thr = 0.0f;
+    float nms_thr = 0.0f;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        fixedInputSize = config.fixed_input_size;
+        detectionResolution = config.detection_resolution;
+        conf_thr = config.confidence_threshold;
+        nms_thr = config.nms_threshold;
+    }
 
-    const int target_h = useFixed ? model_h : config.detection_resolution;
-    const int target_w = useFixed ? model_w : config.detection_resolution;
+    const bool useFixed = fixedInputSize && model_h > 0 && model_w > 0;
+    const int target_h = useFixed ? model_h : detectionResolution;
+    const int target_w = useFixed ? model_w : detectionResolution;
 
     auto t0 = std::chrono::steady_clock::now();
     std::vector<float> input_tensor_values(
@@ -310,9 +346,6 @@ std::vector<std::vector<Detection>> DirectMLDetector::detectBatch(const std::vec
     const int num_classes = rows - 4;
 
     std::vector<std::vector<Detection>> batchDetections(batch_size);
-    float conf_thr = config.confidence_threshold;
-    float nms_thr = config.nms_threshold;
-
     auto t4 = std::chrono::steady_clock::now();
     std::chrono::duration<double, std::milli> nmsTimeTmp{ 0 };
 
@@ -324,15 +357,16 @@ std::vector<std::vector<Detection>> DirectMLDetector::detectBatch(const std::vec
         std::vector<int64_t> shp = { static_cast<int64_t>(rows), static_cast<int64_t>(cols) };
         detections = postProcessYoloDML(ptr, shp, num_classes, conf_thr, nms_thr, &nmsTimeTmp);
 
-        if (useFixed && (target_w != config.detection_resolution))
+        if (useFixed && (target_w != detectionResolution || target_h != detectionResolution))
         {
-            float scale = static_cast<float>(config.detection_resolution) / target_w;
+            float scaleX = static_cast<float>(detectionResolution) / target_w;
+            float scaleY = static_cast<float>(detectionResolution) / target_h;
             for (auto& d : detections)
             {
-                d.box.x = static_cast<int>(d.box.x * scale);
-                d.box.y = static_cast<int>(d.box.y * scale);
-                d.box.width = static_cast<int>(d.box.width * scale);
-                d.box.height = static_cast<int>(d.box.height * scale);
+                d.box.x = static_cast<int>(d.box.x * scaleX);
+                d.box.y = static_cast<int>(d.box.y * scaleY);
+                d.box.width = static_cast<int>(d.box.width * scaleX);
+                d.box.height = static_cast<int>(d.box.height * scaleY);
             }
         }
 
@@ -377,11 +411,7 @@ void DirectMLDetector::processFrame(const cv::Mat& detection_frame, const cv::Ma
 {
     if (detectionPaused)
     {
-        std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
-        detectionBuffer.boxes.clear();
-        detectionBuffer.classes.clear();
-        detectionBuffer.version++;
-        detectionBuffer.cv.notify_all();
+        detectionBuffer.clear();
         return;
     }
     std::unique_lock<std::mutex> lock(inferenceMutex);
@@ -399,19 +429,20 @@ void DirectMLDetector::dmlInferenceThread()
         {
             if (detector_model_changed.load())
             {
-                initializeModel("models/" + config.ai_model);
+                std::string aiModel;
+                {
+                    std::lock_guard<std::mutex> lock(configMutex);
+                    aiModel = config.ai_model;
+                }
+                initializeModel("models/" + aiModel);
                 detection_resolution_changed.store(true);
                 detector_model_changed.store(false);
-                std::cout << "[DML] Detector reloaded: " << config.ai_model << std::endl;
+                std::cout << "[DML] Detector reloaded: " << aiModel << std::endl;
             }
 
             if (detectionPaused)
             {
-                std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
-                detectionBuffer.boxes.clear();
-                detectionBuffer.classes.clear();
-                detectionBuffer.version++;
-                detectionBuffer.cv.notify_all();
+                detectionBuffer.clear();
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
@@ -460,24 +491,26 @@ void DirectMLDetector::dmlInferenceThread()
                     confidences.push_back(d.confidence);
                 }
 
+                detectionBuffer.set(boxes, classes);
+
+                std::string aiModel;
+                Config configSnapshot;
                 {
-                    std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
-                    detectionBuffer.boxes = boxes;
-                    detectionBuffer.classes = classes;
-                    detectionBuffer.version++;
-                    detectionBuffer.cv.notify_all();
+                    std::lock_guard<std::mutex> lock(configMutex);
+                    aiModel = config.ai_model;
+                    configSnapshot = config;
                 }
 
                 const cv::Mat& frameForCollection = sourceFrame.empty() ? frame : sourceFrame;
                 cvm::MaybeCollectDataSample(
                     "",
-                    config.ai_model.c_str(),
+                    aiModel.c_str(),
                     frameForCollection,
                     boxes,
                     classes,
                     confidences,
                     aiming.load(),
-                    config);
+                    configSnapshot);
             }
         }
     }

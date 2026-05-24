@@ -10,6 +10,9 @@
     <ClCompile Include="mouse\KmboxAConnection.cpp" />
     <ClCompile Include="mouse\kmboxA.cpp" />
     <ClCompile Include="mouse\mouse.cpp" />
+    <ClCompile Include="mouse\MouseInput.cpp" />
+    <ClCompile Include="mouse\rzctl.cpp" />
+    <ClCompile Include="mouse\Teensy41RawHid.cpp" />
     <ClCompile Include="mouse\Arduino.cpp" />
     <ClCompile Include="mouse\RP2350.cpp" />
     <ClCompile Include="mouse\AimbotTarget.cpp" />
@@ -81,6 +84,9 @@
     <ClInclude Include="mouse\KmboxAConnection.h" />
     <ClInclude Include="mouse\kmboxA.h" />
     <ClInclude Include="mouse\mouse.h" />
+    <ClInclude Include="mouse\MouseInput.h" />
+    <ClInclude Include="mouse\rzctl.h" />
+    <ClInclude Include="mouse\Teensy41RawHid.h" />
     <ClInclude Include="mouse\Arduino.h" />
     <ClInclude Include="mouse\RP2350.h" />
     <ClInclude Include="mouse\AimbotTarget.h" />
@@ -127,6 +133,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="rzctl.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
   </ItemGroup>

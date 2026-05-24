@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <unordered_map>
 #include <algorithm>
+#include <cmath>
 
 #include "config.h"
 #include "modules/SimpleIni.h"
@@ -121,6 +122,18 @@ bool Config::loadConfig(const std::string& filename)
         rp2350_port = "COM0";
         rp2350_16_bit_mouse = true;
         rp2350_enable_keys = false;
+
+        // Teensy 4.1 RawHID generic mouse bridge
+        teensy_hid_manufacturer = "Generic";
+        teensy_hid_product = "USB HID Mouse";
+        teensy_hid_serial = "AUTO";
+        teensy_hid_vid_filter = "AUTO";
+        teensy_hid_pid_filter = "AUTO";
+        teensy_hid_usage_page = 0xFFAB;
+        teensy_hid_usage_id = 0x0200;
+        teensy_hid_open_index = 0;
+        teensy_hid_packet_timeout_ms = 2;
+        teensy_hid_reconnect_interval_ms = 500;
 
         // kmbox_net
         kmbox_net_ip = "10.42.42.42";
@@ -324,6 +337,39 @@ bool Config::loadConfig(const std::string& filename)
         };
 
     game_profiles.clear();
+    bool profilesChanged = false;
+    auto normalize_profile = [](GameProfile& gp)
+    {
+        bool changed = false;
+
+        if (!std::isfinite(gp.sens) || gp.sens <= 0.0)
+        {
+            gp.sens = 1.0;
+            changed = true;
+        }
+        if (!std::isfinite(gp.yaw) || gp.yaw <= 0.0)
+        {
+            gp.yaw = 0.022;
+            changed = true;
+        }
+        if (!std::isfinite(gp.pitch) || gp.pitch <= 0.0)
+        {
+            gp.pitch = gp.yaw;
+            changed = true;
+        }
+        if (!std::isfinite(gp.baseFOV) || gp.baseFOV < 0.0)
+        {
+            gp.baseFOV = 0.0;
+            changed = true;
+        }
+        if (gp.fovScaled && gp.baseFOV <= 1.0)
+        {
+            gp.baseFOV = 90.0;
+            changed = true;
+        }
+
+        return changed;
+    };
 
     CSimpleIniA::TNamesDepend keys;
     ini.GetAllKeys("Games", keys);
@@ -347,6 +393,7 @@ bool Config::loadConfig(const std::string& filename)
             gp.fovScaled = parts.size() > 3 && (parts[3] == "true" || parts[3] == "1");
             gp.baseFOV = parts.size() > 4 ? std::stod(parts[4]) : 0.0;
 
+            profilesChanged = normalize_profile(gp) || profilesChanged;
             game_profiles[name] = gp;
         }
         catch (const std::exception& e)
@@ -366,11 +413,17 @@ bool Config::loadConfig(const std::string& filename)
         uni.fovScaled = false;
         uni.baseFOV = 0.0;
         game_profiles[uni.name] = uni;
+        profilesChanged = true;
     }
 
-    active_game = get_string("active_game", active_game);
-    if (!game_profiles.count(active_game) && !game_profiles.empty())
-        active_game = game_profiles.begin()->first;
+    active_game = get_string("active_game", "UNIFIED");
+    if (!game_profiles.count(active_game))
+    {
+        if (game_profiles.count("UNIFIED"))
+            active_game = "UNIFIED";
+        else if (!game_profiles.empty())
+            active_game = game_profiles.begin()->first;
+    }
 
     // Capture
     capture_method = get_string("capture_method", "duplication_api");
@@ -446,6 +499,18 @@ bool Config::loadConfig(const std::string& filename)
     rp2350_port = get_string("rp2350_port", "COM0");
     rp2350_16_bit_mouse = get_bool("rp2350_16_bit_mouse", true);
     rp2350_enable_keys = get_bool("rp2350_enable_keys", false);
+
+    // Teensy 4.1 RawHID generic mouse bridge
+    teensy_hid_manufacturer = get_string("teensy_hid_manufacturer", "Generic");
+    teensy_hid_product = get_string("teensy_hid_product", "USB HID Mouse");
+    teensy_hid_serial = get_string("teensy_hid_serial", "AUTO");
+    teensy_hid_vid_filter = get_string("teensy_hid_vid_filter", "AUTO");
+    teensy_hid_pid_filter = get_string("teensy_hid_pid_filter", "AUTO");
+    teensy_hid_usage_page = get_long("teensy_hid_usage_page", 0xFFAB);
+    teensy_hid_usage_id = get_long("teensy_hid_usage_id", 0x0200);
+    teensy_hid_open_index = get_long("teensy_hid_open_index", 0);
+    teensy_hid_packet_timeout_ms = get_long("teensy_hid_packet_timeout_ms", 2);
+    teensy_hid_reconnect_interval_ms = get_long("teensy_hid_reconnect_interval_ms", 500);
 
     // kmbox_net
     kmbox_net_ip = get_string("kmbox_net_ip", "10.42.42.42");
@@ -664,6 +729,9 @@ bool Config::loadConfig(const std::string& filename)
     screenshot_delay = get_long("screenshot_delay", 500);
     verbose = get_bool("verbose", false);
 
+    if (profilesChanged)
+        saveConfig(target);
+
     return true;
 }
 
@@ -744,7 +812,7 @@ bool Config::saveConfig(const std::string& filename)
         << std::fixed << std::setprecision(1)
         << "easynorecoilstrength = " << easynorecoilstrength << "\n"
 
-        << "# WIN32, GHUB, ARDUINO, RP2350, KMBOX_NET, KMBOX_A, MAKCU\n"
+        << "# WIN32, GHUB, RAZER, ARDUINO, RP2350, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
         << "input_method = " << input_method << "\n\n";
 
     // Wind mouse
@@ -768,6 +836,18 @@ bool Config::saveConfig(const std::string& filename)
         << "rp2350_port = " << rp2350_port << "\n"
         << "rp2350_16_bit_mouse = " << (rp2350_16_bit_mouse ? "true" : "false") << "\n"
         << "rp2350_enable_keys = " << (rp2350_enable_keys ? "true" : "false") << "\n\n";
+
+    file << "# Teensy 4.1 RawHID generic mouse bridge\n"
+        << "teensy_hid_manufacturer = " << teensy_hid_manufacturer << "\n"
+        << "teensy_hid_product = " << teensy_hid_product << "\n"
+        << "teensy_hid_serial = " << teensy_hid_serial << "\n"
+        << "teensy_hid_vid_filter = " << teensy_hid_vid_filter << "\n"
+        << "teensy_hid_pid_filter = " << teensy_hid_pid_filter << "\n"
+        << "teensy_hid_usage_page = " << teensy_hid_usage_page << "\n"
+        << "teensy_hid_usage_id = " << teensy_hid_usage_id << "\n"
+        << "teensy_hid_open_index = " << teensy_hid_open_index << "\n"
+        << "teensy_hid_packet_timeout_ms = " << teensy_hid_packet_timeout_ms << "\n"
+        << "teensy_hid_reconnect_interval_ms = " << teensy_hid_reconnect_interval_ms << "\n\n";
 
     // kmbox_net
     file << "# Kmbox_net\n"
@@ -939,9 +1019,10 @@ bool Config::saveConfig(const std::string& filename)
     file << "# Active game profile\n";
     file << "active_game = " << active_game << "\n\n";
     file << "[Games]\n";
-    for (auto& kv : game_profiles)
+    file << std::defaultfloat << std::setprecision(10);
+    for (const auto& kv : game_profiles)
     {
-        auto & gp = kv.second;
+        const auto& gp = kv.second;
         file << gp.name << " = "
              << gp.sens << "," << gp.yaw;
         file << "," << gp.pitch;

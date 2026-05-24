@@ -4,6 +4,7 @@
 #include <Windows.h>
 
 #include <shellapi.h>
+#include <algorithm>
 
 #include "imgui/imgui.h"
 #include <imgui_internal.h>
@@ -79,7 +80,6 @@ void draw_mouse()
         if (ImGui::SliderInt("Future Positions", &config.prediction_futurePositions, 1, 40))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
         
         ImGui::SameLine();
@@ -98,61 +98,51 @@ void draw_mouse()
         if (ImGui::Checkbox("Enable Kalman Filter", &config.kalman_enabled))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderFloat("Kalman Process Noise Pos", &config.kalman_process_noise_position, 0.001f, 5000.0f, "%.3f"))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderFloat("Kalman Process Noise Vel", &config.kalman_process_noise_velocity, 0.001f, 50000.0f, "%.3f"))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderFloat("Kalman Measurement Noise", &config.kalman_measurement_noise, 0.001f, 5000.0f, "%.3f"))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderFloat("Kalman Velocity Damping", &config.kalman_velocity_damping, 0.0f, 3.0f, "%.3f"))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderFloat("Kalman Max Velocity", &config.kalman_max_velocity, 100.0f, 60000.0f, "%.0f"))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderInt("Kalman Warmup Frames", &config.kalman_warmup_frames, 0, 20))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::Checkbox("Kalman Compensate Inference Delay", &config.kalman_compensate_detection_delay))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderFloat("Kalman Additional Predict (ms)", &config.kalman_additional_prediction_ms, -80.0f, 120.0f, "%.1f"))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (ImGui::SliderFloat("Kalman Reset Timeout (s)", &config.kalman_reset_timeout_sec, 0.05f, 3.0f, "%.2f"))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         OverlayUI::EndSection();
@@ -172,6 +162,7 @@ void draw_mouse()
         std::vector<std::string> profile_names;
         for (const auto& kv : config.game_profiles)
             profile_names.push_back(kv.first);
+        std::sort(profile_names.begin(), profile_names.end());
 
         static int selected_index = 0;
         for (size_t i = 0; i < profile_names.size(); ++i)
@@ -201,7 +192,6 @@ void draw_mouse()
                 config.auto_shoot,
                 config.bScope_multiplier
             );
-            input_method_changed.store(true);
         }
 
         const auto& gp = config.currentProfile();
@@ -237,15 +227,11 @@ void draw_mouse()
                 modifiable.sens = static_cast<double>(sens_f);
                 modifiable.yaw = static_cast<double>(yaw_f);
 
-                if (gp.pitch == 0.0 || !gp.fovScaled)
-                    modifiable.pitch = modifiable.yaw;
-                else
-                    modifiable.pitch = static_cast<double>(pitch_f);
+                modifiable.pitch = static_cast<double>(pitch_f);
 
                 modifiable.baseFOV = static_cast<double>(baseFOV_f);
 
                 OverlayConfig_MarkDirty();
-                input_method_changed.store(true);
             }
         }
 
@@ -272,7 +258,6 @@ void draw_mouse()
                 config.game_profiles[name] = gp;
                 config.active_game = name;
                 OverlayConfig_MarkDirty();
-                input_method_changed.store(true);
                 new_profile_name[0] = '\0'; // clear
             }
         }
@@ -284,13 +269,14 @@ void draw_mouse()
             if (ImGui::Button("Delete Current Profile"))
             {
                 config.game_profiles.erase(gp.name);
-                if (!config.game_profiles.empty())
+                if (config.game_profiles.count("UNIFIED") != 0)
+                    config.active_game = "UNIFIED";
+                else if (!config.game_profiles.empty())
                     config.active_game = config.game_profiles.begin()->first;
                 else
                     config.active_game = "UNIFIED";
 
                 OverlayConfig_MarkDirty();
-                input_method_changed.store(true);
             }
             ImGui::PopStyleColor();
         }
@@ -347,7 +333,6 @@ void draw_mouse()
         if (ImGui::Checkbox("Enable WindMouse", &config.wind_mouse_enabled))
         {
             OverlayConfig_MarkDirty();
-            input_method_changed.store(true);
         }
 
         if (!config.wind_mouse_enabled)
@@ -395,7 +380,7 @@ void draw_mouse()
 
     if (OverlayUI::BeginSection("Input Method", "mouse_section_input_method"))
     {
-        std::vector<std::string> input_methods = { "WIN32", "GHUB", "ARDUINO", "RP2350", "KMBOX_NET", "KMBOX_A", "MAKCU" };
+        std::vector<std::string> input_methods = { "WIN32", "GHUB", "RAZER", "ARDUINO", "RP2350", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU" };
 
         std::vector<const char*> method_items;
         method_items.reserve(input_methods.size());
@@ -426,17 +411,17 @@ void draw_mouse()
             }
         }
 
-        if (config.input_method == "ARDUINO")
+        if (config.input_method == "ARDUINO" || config.input_method == "TEENSY41")
         {
             if (arduinoSerial)
             {
                 if (arduinoSerial->isOpen())
                 {
-                    ImGui::TextColored(ImVec4(0, 255, 0, 255), "Arduino connected");
+                    ImGui::TextColored(ImVec4(0, 255, 0, 255), config.input_method == "TEENSY41" ? "Teensy 4.1 connected" : "Arduino connected");
                 }
                 else
                 {
-                    ImGui::TextColored(ImVec4(255, 0, 0, 255), "Arduino not connected");
+                    ImGui::TextColored(ImVec4(255, 0, 0, 255), config.input_method == "TEENSY41" ? "Teensy 4.1 not connected" : "Arduino not connected");
                 }
             }
 
@@ -463,7 +448,7 @@ void draw_mouse()
                 }
             }
 
-            if (ImGui::Combo("Arduino Port", &port_index, port_items.data(), static_cast<int>(port_items.size())))
+            if (ImGui::Combo(config.input_method == "TEENSY41" ? "Teensy Port" : "Arduino Port", &port_index, port_items.data(), static_cast<int>(port_items.size())))
             {
                 config.arduino_port = port_list[port_index];
                 OverlayConfig_MarkDirty();
@@ -494,22 +479,29 @@ void draw_mouse()
                 }
             }
 
-            if (ImGui::Combo("Arduino Baudrate", &baud_rate_index, baud_rate_items.data(), static_cast<int>(baud_rate_items.size())))
+            if (ImGui::Combo(config.input_method == "TEENSY41" ? "Teensy Baudrate" : "Arduino Baudrate", &baud_rate_index, baud_rate_items.data(), static_cast<int>(baud_rate_items.size())))
             {
                 config.arduino_baudrate = baud_rate_list[baud_rate_index];
                 OverlayConfig_MarkDirty();
                 input_method_changed.store(true);
             }
 
-            if (ImGui::Checkbox("Arduino 16-bit Mouse", &config.arduino_16_bit_mouse))
+            if (config.input_method == "TEENSY41")
             {
-                OverlayConfig_MarkDirty();
-                input_method_changed.store(true);
+                ImGui::TextDisabled("Uses the Teensy 4.1 serial mouse bridge protocol.");
             }
-            if (ImGui::Checkbox("Arduino Enable Keys", &config.arduino_enable_keys))
+            else
             {
-                OverlayConfig_MarkDirty();
-                input_method_changed.store(true);
+                if (ImGui::Checkbox("Arduino 16-bit Mouse", &config.arduino_16_bit_mouse))
+                {
+                    OverlayConfig_MarkDirty();
+                    input_method_changed.store(true);
+                }
+                if (ImGui::Checkbox("Arduino Enable Keys", &config.arduino_enable_keys))
+                {
+                    OverlayConfig_MarkDirty();
+                    input_method_changed.store(true);
+                }
             }
         }
         else if (config.input_method == "RP2350")
@@ -616,9 +608,96 @@ void draw_mouse()
 
             ImGui::TextColored(ImVec4(255, 0, 0, 255), "Use at your own risk, the method is detected in some games.");
         }
+        else if (config.input_method == "TEENSY41_HID")
+        {
+            if (activeMouseInputOwner && activeMouseInputOwner->isOpen())
+            {
+                ImGui::TextColored(ImVec4(0, 255, 0, 255), "Teensy 4.1 RawHID connected");
+            }
+            else
+            {
+                ImGui::TextColored(ImVec4(255, 0, 0, 255), "Teensy 4.1 RawHID not connected");
+            }
+
+            static char serial[64] = "";
+            static char vid[16] = "";
+            static char pid[16] = "";
+            static std::string last_serial;
+            static std::string last_vid;
+            static std::string last_pid;
+            static int usage_page = 0;
+            static int usage_id = 0;
+            static int open_index = 0;
+            static int timeout_ms = 0;
+            static int reconnect_ms = 0;
+
+            if (last_serial != config.teensy_hid_serial ||
+                last_vid != config.teensy_hid_vid_filter ||
+                last_pid != config.teensy_hid_pid_filter ||
+                usage_page != config.teensy_hid_usage_page ||
+                usage_id != config.teensy_hid_usage_id ||
+                open_index != config.teensy_hid_open_index ||
+                timeout_ms != config.teensy_hid_packet_timeout_ms ||
+                reconnect_ms != config.teensy_hid_reconnect_interval_ms)
+            {
+                strncpy(serial, config.teensy_hid_serial.c_str(), sizeof(serial));
+                strncpy(vid, config.teensy_hid_vid_filter.c_str(), sizeof(vid));
+                strncpy(pid, config.teensy_hid_pid_filter.c_str(), sizeof(pid));
+                serial[sizeof(serial) - 1] = '\0';
+                vid[sizeof(vid) - 1] = '\0';
+                pid[sizeof(pid) - 1] = '\0';
+                last_serial = config.teensy_hid_serial;
+                last_vid = config.teensy_hid_vid_filter;
+                last_pid = config.teensy_hid_pid_filter;
+                usage_page = config.teensy_hid_usage_page;
+                usage_id = config.teensy_hid_usage_id;
+                open_index = config.teensy_hid_open_index;
+                timeout_ms = config.teensy_hid_packet_timeout_ms;
+                reconnect_ms = config.teensy_hid_reconnect_interval_ms;
+            }
+
+            ImGui::InputText("Serial", serial, sizeof(serial));
+            ImGui::InputText("VID filter", vid, sizeof(vid));
+            ImGui::InputText("PID filter", pid, sizeof(pid));
+            ImGui::InputInt("Usage Page", &usage_page);
+            ImGui::InputInt("Usage ID", &usage_id);
+            ImGui::InputInt("Open Index", &open_index);
+            ImGui::InputInt("Packet Timeout ms", &timeout_ms);
+            ImGui::InputInt("Reconnect ms", &reconnect_ms);
+
+            if (ImGui::Button("Save & Reconnect##teensy_hid"))
+            {
+                config.teensy_hid_serial = serial;
+                config.teensy_hid_vid_filter = vid;
+                config.teensy_hid_pid_filter = pid;
+                config.teensy_hid_usage_page = usage_page;
+                config.teensy_hid_usage_id = usage_id;
+                config.teensy_hid_open_index = open_index;
+                config.teensy_hid_packet_timeout_ms = timeout_ms;
+                config.teensy_hid_reconnect_interval_ms = reconnect_ms;
+                last_serial = config.teensy_hid_serial;
+                last_vid = config.teensy_hid_vid_filter;
+                last_pid = config.teensy_hid_pid_filter;
+                OverlayConfig_MarkDirty();
+                input_method_changed.store(true);
+            }
+        }
+        else if (config.input_method == "RAZER")
+        {
+            if (razerControl && razerControl->isOpen())
+            {
+                ImGui::TextColored(ImVec4(0, 255, 0, 255), "Razer rzctl connected");
+            }
+            else
+            {
+                ImGui::TextColored(ImVec4(255, 0, 0, 255), "Razer rzctl not connected");
+            }
+            ImGui::Text("Requires rzctl.dll next to ai.exe.");
+            ImGui::TextColored(ImVec4(255, 0, 0, 255), "Use at your own risk, the method is detected in some games.");
+        }
         else if (config.input_method == "WIN32")
         {
-            ImGui::TextColored(ImVec4(255, 255, 255, 255), "This is a standard mouse input method, it may not work in most games. Use GHUB, ARDUINO, or RP2350.");
+            ImGui::TextColored(ImVec4(255, 255, 255, 255), "This is a standard mouse input method, it may not work in most games. Use GHUB, RAZER, ARDUINO, RP2350, TEENSY41, or TEENSY41_HID.");
             ImGui::TextColored(ImVec4(255, 0, 0, 255), "Use at your own risk, the method is detected in some games.");
         }
         else if (config.input_method == "KMBOX_NET")

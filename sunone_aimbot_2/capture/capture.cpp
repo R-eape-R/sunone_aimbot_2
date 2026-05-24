@@ -1,5 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
@@ -401,11 +403,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
 
         auto clearDetections = [&]()
         {
-            std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
-            detectionBuffer.boxes.clear();
-            detectionBuffer.classes.clear();
-            detectionBuffer.version++;
-            detectionBuffer.cv.notify_all();
+            detectionBuffer.clear();
         };
 
         auto markCaptureUnavailable = [&]()

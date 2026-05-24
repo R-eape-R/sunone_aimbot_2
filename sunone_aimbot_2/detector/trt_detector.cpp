@@ -38,6 +38,12 @@ extern std::atomic<bool> detection_resolution_changed;
 static bool error_logged = false;
 
 namespace {
+bool configVerbose()
+{
+    std::lock_guard<std::mutex> lock(configMutex);
+    return config.verbose;
+}
+
 bool tryGetDimInt(int64_t value, int* out)
 {
     if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max())
@@ -79,13 +85,23 @@ void filterDetectionsByDepthMask(std::vector<Detection>& detections)
     if (detections.empty())
         return;
 
-    if (!config.depth_inference_enabled || !config.depth_mask_enabled)
+    bool depthInferenceEnabled = false;
+    bool depthMaskEnabled = false;
+    int depthMaskHoldFrames = 0;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        depthInferenceEnabled = config.depth_inference_enabled;
+        depthMaskEnabled = config.depth_mask_enabled;
+        depthMaskHoldFrames = config.depth_mask_hold_frames;
+    }
+
+    if (!depthInferenceEnabled || !depthMaskEnabled)
     {
         holdTtl.release();
         return;
     }
 
-    const int holdFrames = std::clamp(config.depth_mask_hold_frames, 0, 120);
+    const int holdFrames = std::clamp(depthMaskHoldFrames, 0, 120);
     cv::Mat currentMask = getCurrentDetectionSuppressionMask();
     cv::Mat suppressionMask;
 
@@ -137,6 +153,8 @@ TrtDetector::TrtDetector()
     cudaGraphExec(nullptr),
     inputBufferDevice(nullptr),
     img_scale(1.0f),
+    img_scale_x(1.0f),
+    img_scale_y(1.0f),
     numClasses(0)
 {
     stream = nullptr;
@@ -145,6 +163,7 @@ TrtDetector::TrtDetector()
 
 TrtDetector::~TrtDetector()
 {
+    requestStop();
     destroyCudaGraph();
     freePinnedOutputs();
 
@@ -168,6 +187,12 @@ void TrtDetector::freePinnedOutputs()
     pinnedOutputBuffers.clear();
 }
 
+void TrtDetector::requestStop()
+{
+    shouldExit.store(true);
+    inferenceCV.notify_all();
+}
+
 void TrtDetector::allocatePinnedOutputs()
 {
     freePinnedOutputs();
@@ -188,7 +213,7 @@ void TrtDetector::allocatePinnedOutputs()
 
         pinnedOutputBuffers[name] = hostPtr;
 
-        if (config.verbose)
+        if (configVerbose())
         {
             std::cout << "[Detector] Allocated pinned host buffer for output " << name
                 << ": " << bytes << " bytes" << std::endl;
@@ -276,7 +301,7 @@ void TrtDetector::getInputNames()
         if (engine->getTensorIOMode(name) == nvinfer1::TensorIOMode::kINPUT)
         {
             inputNames.emplace_back(name);
-            if (config.verbose)
+            if (configVerbose())
             {
                 std::cout << "[Detector] Detected input: " << name << std::endl;
             }
@@ -299,7 +324,7 @@ void TrtDetector::getOutputNames()
             outputNames.emplace_back(name);
             outputTypes[name] = engine->getTensorDataType(name);
 
-            if (config.verbose)
+            if (configVerbose())
             {
                 std::cout << "[Detector] Detected output: " << name << std::endl;
             }
@@ -332,7 +357,7 @@ void TrtDetector::getBindings()
             if (err == cudaSuccess)
             {
                 inputBindings[name] = ptr;
-                if (config.verbose)
+                if (configVerbose())
                 {
                     std::cout << "[Detector] Allocated " << size << " bytes for input " << name << std::endl;
                 }
@@ -353,7 +378,7 @@ void TrtDetector::getBindings()
             if (err == cudaSuccess)
             {
                 outputBindings[name] = ptr;
-                if (config.verbose)
+                if (configVerbose())
                 {
                     std::cout << "[Detector] Allocated " << size << " bytes for output " << name << std::endl;
                 }
@@ -368,6 +393,16 @@ void TrtDetector::getBindings()
 
 void TrtDetector::initialize(const std::string& modelFile)
 {
+    int detectionResolution = 0;
+    bool useCudaGraphSetting = false;
+    bool verbose = false;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        detectionResolution = config.detection_resolution;
+        useCudaGraphSetting = config.use_cuda_graph;
+        verbose = config.verbose;
+    }
+
     runtime.reset(nvinfer1::createInferRuntime(gLogger));
     loadEngine(modelFile);
     if (!engine)
@@ -397,14 +432,21 @@ void TrtDetector::initialize(const std::string& modelFile)
     for (int i = 0; i < inputDims.nbDims; ++i)
         if (inputDims.d[i] <= 0) isStatic = false;
 
-    if (isStatic != config.fixed_input_size)
+    bool shouldUpdateFixedInput = false;
     {
-        config.fixed_input_size = isStatic;
+        std::lock_guard<std::mutex> lock(configMutex);
+        shouldUpdateFixedInput = (isStatic != config.fixed_input_size);
+        if (shouldUpdateFixedInput)
+            config.fixed_input_size = isStatic;
+    }
+
+    if (shouldUpdateFixedInput)
+    {
         detector_model_changed.store(true);
         std::cout << "[Detector] Automatically set fixed_input_size = " << (isStatic ? "true" : "false") << std::endl;
     }
 
-    const int target = config.detection_resolution;
+    const int target = detectionResolution;
     if (!isStatic)
     {
         nvinfer1::Dims4 newShape{ 1, 3, target, target };
@@ -479,7 +521,9 @@ void TrtDetector::initialize(const std::string& modelFile)
 
     cvStream = cv::cuda::StreamAccessor::wrapStream(stream);
 
-    img_scale = static_cast<float>(config.detection_resolution) / w;
+    img_scale_x = static_cast<float>(detectionResolution) / w;
+    img_scale_y = static_cast<float>(detectionResolution) / h;
+    img_scale = img_scale_x;
 
     resizedBuffer.create(h, w, CV_8UC3);
     floatBuffer.create(h, w, CV_32FC3);
@@ -508,16 +552,17 @@ void TrtDetector::initialize(const std::string& modelFile)
     cudaEventCreate(&inferenceCompleteEvent);
     cudaEventCreate(&copyCompleteEvent);
 
-    useCudaGraph = config.use_cuda_graph;
+    useCudaGraph = useCudaGraphSetting;
     if (useCudaGraph)
     {
         captureCudaGraph();
     }
 
-    if (config.verbose)
+    if (verbose)
     {
         std::cout << "[Detector] Initialized. ModelStatic=" << std::boolalpha << isStatic
-            << ", NetInput=" << h << "x" << w << " (scale=" << img_scale << ")" << std::endl;
+            << ", NetInput=" << h << "x" << w
+            << " (scaleX=" << img_scale_x << ", scaleY=" << img_scale_y << ")" << std::endl;
     }
 }
 
@@ -575,8 +620,11 @@ void TrtDetector::loadEngine(const std::string& modelFile)
                         engineFile.write(reinterpret_cast<const char*>(serializedEngine->data()), serializedEngine->size());
                         engineFile.close();
 
-                        config.ai_model = std::filesystem::path(engineFilePath).filename().string();
-                        config.saveConfig("config.ini");
+                        {
+                            std::lock_guard<std::mutex> lock(configMutex);
+                            config.ai_model = std::filesystem::path(engineFilePath).filename().string();
+                            config.saveConfig("config.ini");
+                        }
 
                         std::cout << "[Detector] Engine saved to: " << engineFilePath << std::endl;
                     }
@@ -598,13 +646,14 @@ void TrtDetector::loadEngine(const std::string& modelFile)
 
 void TrtDetector::processFrame(const cv::Mat& detection_frame, const cv::Mat& source_frame)
 {
-    if (config.backend == "DML") return;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        if (config.backend == "DML") return;
+    }
 
     if (detectionPaused)
     {
-        std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
-        detectionBuffer.boxes.clear();
-        detectionBuffer.classes.clear();
+        detectionBuffer.clear();
         return;
     }
 
@@ -619,13 +668,14 @@ void TrtDetector::processFrame(const cv::Mat& detection_frame, const cv::Mat& so
 
 void TrtDetector::processFrameGpu(const cv::cuda::GpuMat& frame)
 {
-    if (config.backend == "DML") return;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        if (config.backend == "DML") return;
+    }
 
     if (detectionPaused)
     {
-        std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
-        detectionBuffer.boxes.clear();
-        detectionBuffer.classes.clear();
+        detectionBuffer.clear();
         return;
     }
 
@@ -640,10 +690,16 @@ void TrtDetector::processFrameGpu(const cv::cuda::GpuMat& frame)
 
 void TrtDetector::inferenceThread()
 {
-    while (!shouldExit)
+    while (!shouldExit && !::shouldExit)
     {
         if (detector_model_changed.load())
         {
+            std::string aiModel;
+            {
+                std::lock_guard<std::mutex> cfgLock(configMutex);
+                aiModel = config.ai_model;
+            }
+
             {
                 std::unique_lock<std::mutex> lock(inferenceMutex);
                 destroyCudaGraph();
@@ -665,14 +721,20 @@ void TrtDetector::inferenceThread()
                 frameReady = false;
                 pendingFrameType = PendingFrameType::None;
             }
-            initialize("models/" + config.ai_model);
+            initialize("models/" + aiModel);
             detection_resolution_changed.store(true);
             detector_model_changed.store(false);
         }
 
-        if (useCudaGraph != config.use_cuda_graph)
+        bool useCudaGraphSetting = false;
         {
-            useCudaGraph = config.use_cuda_graph;
+            std::lock_guard<std::mutex> cfgLock(configMutex);
+            useCudaGraphSetting = config.use_cuda_graph;
+        }
+
+        if (useCudaGraph != useCudaGraphSetting)
+        {
+            useCudaGraph = useCudaGraphSetting;
             if (!useCudaGraph)
             {
                 destroyCudaGraph();
@@ -691,10 +753,10 @@ void TrtDetector::inferenceThread()
 
         {
             std::unique_lock<std::mutex> lock(inferenceMutex);
-            if (!frameReady && !shouldExit)
-                inferenceCV.wait(lock, [this] { return frameReady || shouldExit; });
+            if (!frameReady && !shouldExit && !::shouldExit)
+                inferenceCV.wait(lock, [this] { return frameReady || shouldExit || ::shouldExit; });
 
-            if (shouldExit) break;
+            if (shouldExit || ::shouldExit) break;
 
             if (frameReady)
             {
@@ -828,38 +890,40 @@ void TrtDetector::inferenceThread()
                     confidences.push_back(det.confidence);
                 }
 
+                detectionBuffer.set(boxes, classes);
+
+                std::string aiModel;
+                Config configSnapshot;
                 {
-                    std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
-                    detectionBuffer.boxes = boxes;
-                    detectionBuffer.classes = classes;
-                    detectionBuffer.version++;
-                    detectionBuffer.cv.notify_all();
+                    std::lock_guard<std::mutex> cfgLock(configMutex);
+                    aiModel = config.ai_model;
+                    configSnapshot = config;
                 }
 
                 if (hasGpuFrame)
                 {
                     cvm::MaybeCollectDataSample(
                         "",
-                        config.ai_model.c_str(),
+                        aiModel.c_str(),
                         frameGpu,
                         boxes,
                         classes,
                         confidences,
                         aiming.load(),
-                        config);
+                        configSnapshot);
                 }
                 else
                 {
                     const cv::Mat& frameForCollection = sourceFrame.empty() ? frame : sourceFrame;
                     cvm::MaybeCollectDataSample(
                         "",
-                        config.ai_model.c_str(),
+                        aiModel.c_str(),
                         frameForCollection,
                         boxes,
                         classes,
                         confidences,
                         aiming.load(),
-                        config);
+                        configSnapshot);
                 }
 
                 auto t_post_end = std::chrono::steady_clock::now();
@@ -949,7 +1013,13 @@ void TrtDetector::preProcess(const cv::cuda::GpuMat& frame)
         h,
         stream);
 
-    if (config.verbose)
+    bool verbose = false;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        verbose = config.verbose;
+    }
+
+    if (verbose)
     {
         auto err = cudaGetLastError();
         if (err != cudaSuccess)
@@ -969,13 +1039,20 @@ std::vector<Detection> TrtDetector::postProcess(const float* output, const std::
         return {};
 
     std::vector<Detection> detections;
+    float confThreshold = 0.0f;
+    float nmsThreshold = 0.0f;
+    {
+        std::lock_guard<std::mutex> lock(configMutex);
+        confThreshold = config.confidence_threshold;
+        nmsThreshold = config.nms_threshold;
+    }
     
     detections = postProcessYolo(
         output,
         shapeIt->second,
         numClasses,
-        config.confidence_threshold,
-        config.nms_threshold,
+        confThreshold,
+        nmsThreshold,
         nmsTime
     );
     filterDetectionsByDepthMask(detections);

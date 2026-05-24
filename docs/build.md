@@ -210,7 +210,7 @@ Useful options:
 * **For DML build (DirectML backend):**
 
   * Use prebuilt OpenCV package (include/lib/dll) if you **only** plan to use DirectML.
-  * OpenCV runtime for DML must not import CUDA (`cudnn/cublas/npp`) or GStreamer (`gst*`) DLLs.
+  * OpenCV runtime for DML must not import CUDA (`cudnn/cublas/npp`) DLLs.
   * If you want to use both CUDA and DML modes in the same executable, you should always use your custom OpenCV build with CUDA enabled (it will work for both modes).
 * **Note:**
   If you run the CUDA backend with non-CUDA OpenCV DLLs, the program will not work and may crash due to missing symbols.
@@ -230,7 +230,7 @@ Use separate build directories for each backend:
   cmake --build build/dml --config Release
   ```
 
-  For DML build, OpenCV must be built **without CUDA** and **without GStreamer**.
+  For DML build, OpenCV must be built **without CUDA**.
   The setup script downloads prebuilt OpenCV and places it in
   `sunone_aimbot_2/modules/opencv/prebuilt/opencv/build` (auto-detected by CMake).
 

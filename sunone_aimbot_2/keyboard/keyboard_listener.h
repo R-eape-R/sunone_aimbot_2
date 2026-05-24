@@ -1,6 +1,7 @@
 #ifndef KEYBOARD_LISTENER_H
 #define KEYBOARD_LISTENER_H
 
+#include <string>
 #include <vector>
 
 void keyboardListener();

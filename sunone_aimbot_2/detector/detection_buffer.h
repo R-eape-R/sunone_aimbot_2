@@ -21,6 +21,15 @@ struct DetectionBuffer
         cv.notify_all();
     }
 
+    void clear()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        boxes.clear();
+        classes.clear();
+        ++version;
+        cv.notify_all();
+    }
+
     void get(std::vector<cv::Rect>& outBoxes, std::vector<int>& outClasses, int& outVersion)
     {
         std::lock_guard<std::mutex> lock(mutex);
