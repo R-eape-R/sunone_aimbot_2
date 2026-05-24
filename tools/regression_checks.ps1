@@ -44,6 +44,14 @@ Assert-Contains $config 'circle_mask\s*=\s*hasCircleFovSetting\s*\?\s*legacyCirc
     'Legacy pixel circle masks must migrate to the lightweight circle FOV instead of forcing CPU capture.'
 Assert-Contains $config 'circle_fov_radius_percent\s*=\s*get_long\("circle_fov_radius_percent",\s*100\)' `
     'Circle FOV radius must be configurable and default to the old full mask size.'
+Assert-Contains $configHeader 'bool\s+game_overlay_compensate_latency' `
+    'Config header must expose game overlay latency compensation.'
+Assert-Contains $config 'game_overlay_compensate_latency\s*=\s*true' `
+    'Game overlay latency compensation must default enabled.'
+Assert-Contains $config 'get_bool\("game_overlay_compensate_latency",\s*true\)' `
+    'Config load must read game overlay latency compensation.'
+Assert-Contains $config 'game_overlay_compensate_latency = ' `
+    'Config save must persist game overlay latency compensation.'
 
 $main = Read-Source 'sunone_aimbot_2/sunone_aimbot_2.cpp'
 Assert-Contains $main 'trt_detector\.requestStop\(\);\s*trt_detThread\.join\(\);' `
@@ -58,7 +66,7 @@ Assert-Contains $trtHeader 'void\s+requestStop\(\);' `
 $trt = Read-Source 'sunone_aimbot_2/detector/trt_detector.cpp'
 Assert-Contains $trt 'void\s+TrtDetector::requestStop\(\)' `
     'TrtDetector requestStop implementation is required.'
-Assert-Contains $trt 'detectionBuffer\.version\+\+;\s*detectionBuffer\.cv\.notify_all\(\);' `
+Assert-Contains $trt 'detectionBuffer\.clear\(\);' `
     'TRT pause path must publish cleared detections to consumers.'
 Assert-Contains $trt 'void\s+TrtDetector::copyCpuTensorToDevice' `
     'TRT CPU-frame preprocessing must prepare the input tensor on CPU before copying it to CUDA.'
@@ -92,6 +100,14 @@ Assert-Contains $capture '\[CaptureDiag\]' `
     'Capture diagnostics must log CUDA direct-capture counters.'
 Assert-Contains $capture 'GetNextFrameGpu\(screenshotGpu,\s*&gpuStatus\)' `
     'Capture diagnostics must record GPU capture status.'
+Assert-Contains $capture 'std::chrono::steady_clock::time_point\s+frameTimestamp' `
+    'Capture must timestamp frames before preprocessing or detector submission.'
+Assert-Contains $capture 'trt_detector\.processFrameGpu\(screenshotGpu,\s*frameTimestamp\)' `
+    'TRT GPU capture path must pass the original frame timestamp into inference.'
+Assert-Contains $capture 'dml_detector->processFrame\(detectionFrame,\s*screenshotCpu,\s*frameTimestamp\)' `
+    'DML capture path must preserve frame timestamps through preprocessing.'
+Assert-Contains $capture 'trt_detector\.processFrame\(detectionFrame,\s*screenshotCpu,\s*frameTimestamp\)' `
+    'TRT CPU capture path must preserve frame timestamps through preprocessing.'
 
 $circleFov = Read-Source 'sunone_aimbot_2/capture/circle_fov.h'
 Assert-Contains $circleFov 'pointInsideCircleFov' `
@@ -151,6 +167,12 @@ Assert-Contains $mouseHeader 'RzctlMouse\* rzctl' `
     'MouseThread must retain a Razer device pointer.'
 Assert-Contains $mouseHeader 'Teensy41RawHid\* teensy41RawHid' `
     'MouseThread must retain a TEENSY41_HID device pointer.'
+Assert-Contains $mouseHeader 'MotionCompensationSample' `
+    'MouseThread must keep a short motion trail for latency compensation.'
+Assert-Contains $mouseHeader 'getMotionCompensationSince' `
+    'MouseThread must expose summed movement since a capture timestamp.'
+Assert-Contains $mouseHeader 'std::chrono::steady_clock::time_point observationTime' `
+    'MouseThread prediction and movement APIs must accept capture observation time.'
 
 $mouseSource = Read-Source 'sunone_aimbot_2/mouse/mouse.cpp'
 Assert-Contains $mouseSource 'const std::string inputMethod = config\.input_method' `
@@ -163,6 +185,14 @@ Assert-NotContains $mouseSource 'else if \(gHub\)\s*\{\s*gHub->mouse_xy' `
     'Selected control backends must not fall through to GHub movement.'
 Assert-Contains $mouseSource 'if \(inputMethod == "WIN32"\)' `
     'Win32 movement must only run when WIN32 is explicitly selected.'
+Assert-Contains $mouseSource 'recordMotionCompensationStep\(dx,\s*dy\)' `
+    'MouseThread must record actual submitted movement for latency compensation.'
+Assert-Contains $mouseSource 'MouseThread::getMotionCompensationSince' `
+    'MouseThread must be able to sum movement after a frame timestamp.'
+Assert-Contains $mouseSource 'MouseThread::mouseCountsToScreenPixels' `
+    'Motion compensation must use the same game-profile conversion as the wind trail.'
+Assert-Contains $mouseSource 'currentDetectionDelaySec\(double observationAgeSec' `
+    'Prediction delay compensation must use measured frame age when available.'
 
 $keyboardListener = Read-Source 'sunone_aimbot_2/keyboard/keyboard_listener.cpp'
 Assert-Contains $keyboardListener 'config\.input_method == "TEENSY41_HID"' `
@@ -181,8 +211,22 @@ Assert-Contains $overlay 'OverlayConfig_SaveNow\(\);' `
 $gameOverlay = Read-Source 'sunone_aimbot_2/runtime/game_overlay_loop.cpp'
 Assert-Contains $gameOverlay 'GetMonitorHandleByIndex\(overlayMonitorIndex\)' `
     'Game overlay must use the configured capture monitor instead of always choosing primary.'
+Assert-Contains $gameOverlay 'resolveGameOverlayMonitorBounds' `
+    'Game overlay must recompute monitor bounds inside its render loop.'
+Assert-Contains $gameOverlay 'lastOverlayMonitorIndex' `
+    'Game overlay must track monitor changes while running.'
+Assert-Contains $gameOverlay 'overlayMonitorChanged' `
+    'Game overlay must refresh its window when monitor_idx changes at runtime.'
 Assert-Contains $gameOverlay 'SetWindowBounds\(pr\.left,\s*pr\.top,\s*pw,\s*ph\)' `
     'Game overlay window bounds must honor monitor offsets.'
+Assert-Contains $gameOverlay 'detectionTimestamp\s*=\s*detectionBuffer\.frameTimestamp' `
+    'Game overlay must read the source frame timestamp for box projection.'
+Assert-Contains $gameOverlay 'projectDetectionBox' `
+    'Game overlay must project boxes through the latency compensation helper.'
+Assert-Contains $gameOverlay 'getMotionCompensationSince\(compensationTimestamp\)' `
+    'Game overlay must offset stale detection boxes by mouse movement since capture.'
+Assert-Contains $gameOverlay 'velocityX' `
+    'Game overlay must use track velocity when projecting debug boxes.'
 
 $neuralHeaderPath = Join-Path $RepoRoot 'sunone_aimbot_2/neural/NeuralTracker.h'
 $neuralSourcePath = Join-Path $RepoRoot 'sunone_aimbot_2/neural/NeuralTracker.cpp'
@@ -200,6 +244,7 @@ $detectionBuffer = Read-Source 'sunone_aimbot_2/detector/detection_buffer.h'
 $mouseLoop = Read-Source 'sunone_aimbot_2/runtime/mouse_thread_loop.cpp'
 $drawSettings = Read-Source 'sunone_aimbot_2/overlay/draw_settings.h'
 $drawDebug = Read-Source 'sunone_aimbot_2/overlay/draw_debug.cpp'
+$drawGameOverlay = Read-Source 'sunone_aimbot_2/overlay/draw_game_overlay.cpp'
 
 Assert-Contains $neuralHeader 'NeuralTrackerFeatureCount\s*=\s*16' `
     'Neural tracker model contract must stay at 16 association features.'
@@ -290,25 +335,49 @@ Assert-Contains $drawNeural 'ImGui::SliderInt\("Target lead %",\s*&config\.pid_g
 
 Assert-Contains $detectionBuffer 'std::vector<float>\s+confidences' `
     'DetectionBuffer must publish detector confidence with each box for neural association.'
-Assert-Contains $dml 'detectionBuffer\.confidences\s*=\s*confidences' `
-    'DML detector must publish per-detection confidences.'
-Assert-Contains $dml 'detectionBuffer\.confidences\.clear\(\)' `
-    'DML pause/reload clear paths must clear per-detection confidences.'
-Assert-Contains $trt 'detectionBuffer\.confidences\s*=\s*confidences' `
-    'TRT detector must publish per-detection confidences.'
-Assert-Contains $trt 'detectionBuffer\.confidences\.clear\(\)' `
-    'TRT pause/reload clear paths must clear per-detection confidences.'
+Assert-Contains $detectionBuffer 'std::chrono::steady_clock::time_point\s+frameTimestamp' `
+    'DetectionBuffer must preserve the source capture timestamp for latency compensation.'
+Assert-Contains $detectionBuffer 'std::chrono::steady_clock::time_point\s+publishTimestamp' `
+    'DetectionBuffer must publish when detections became visible to consumers.'
+Assert-Contains $detectionBuffer 'set\(\s*const std::vector<cv::Rect>& newBoxes,\s*const std::vector<int>& newClasses,\s*const std::vector<float>& newConfidences,\s*std::chrono::steady_clock::time_point newFrameTimestamp = \{\}' `
+    'DetectionBuffer set must preserve confidences and accept an optional frame timestamp.'
+Assert-Contains $detectionBuffer 'void\s+clear\(\)' `
+    'DetectionBuffer must provide a single clear path that also clears confidences and timestamps.'
+Assert-Contains $detectionBuffer 'outFrameTimestamp' `
+    'DetectionBuffer get overloads must expose frame timestamps to consumers.'
+Assert-Contains $dml 'currentFrameTimestamp' `
+    'DML detector must store the timestamp associated with the queued frame.'
+Assert-Contains $dml 'detectionBuffer\.set\(boxes,\s*classes,\s*confidences,\s*frameTimestamp\)' `
+    'DML detector must publish per-detection confidences with the source timestamp.'
+Assert-Contains $dml 'detectionBuffer\.clear\(\)' `
+    'DML pause/reload clear paths must clear detections, confidences, and timestamps.'
+Assert-Contains $trt 'currentFrameTimestamp' `
+    'TRT detector must store the timestamp associated with the queued CPU/GPU frame.'
+Assert-Contains $trt 'detectionBuffer\.set\(boxes,\s*classes,\s*confidences,\s*frameTimestamp\)' `
+    'TRT detector must publish per-detection confidences with the source timestamp.'
+Assert-Contains $trt 'detectionBuffer\.clear\(\)' `
+    'TRT pause/reload clear paths must clear detections, confidences, and timestamps.'
 Assert-Contains $mouseLoop 'detectionBuffer\.confidences' `
     'Mouse runtime must copy confidences from DetectionBuffer.'
+Assert-Contains $mouseLoop 'detectionTimestamp\s*=\s*detectionBuffer\.frameTimestamp' `
+    'Mouse runtime must copy source frame timestamps from DetectionBuffer.'
 Assert-Contains $mouseLoop 'targetTracker\.update\(\s*boxes,\s*classes,\s*confidences,' `
     'Mouse runtime must pass confidences into the target tracker.'
+Assert-Contains $mouseLoop 'detectionTimestamp\s*\)' `
+    'Mouse runtime must pass detection timestamps into tracker and movement compensation.'
 
 Assert-Contains $aimbotTargetHeader 'float\s+confidence' `
     'Tracked targets must retain detector confidence.'
 Assert-Contains $aimbotTargetHeader 'lastNeuralScore' `
     'Track debug state must expose the most recent neural association score.'
+Assert-Contains $aimbotTargetHeader 'velocityX' `
+    'Track debug state must expose track velocity for overlay latency compensation.'
+Assert-Contains $aimbotTargetHeader 'lastUpdate' `
+    'Track debug state must expose update timestamps for overlay latency compensation.'
 Assert-Contains $aimbotTargetHeader 'const std::vector<float>& confidences' `
     'MultiTargetTracker must accept per-detection confidences.'
+Assert-Contains $aimbotTargetHeader 'std::chrono::steady_clock::time_point observationTime' `
+    'MultiTargetTracker must accept capture observation time for frame-age-aware velocity.'
 Assert-Contains $aimbotTargetSource 'neural/NeuralTracker\.h' `
     'MultiTargetTracker must use the neural tracker scorer.'
 Assert-Contains $aimbotTargetSource 'buildNeuralFeatures' `
@@ -332,6 +401,8 @@ Assert-Contains $drawDebug 'neural_tracker_log_enabled' `
     'Debug overlay must expose neural association CSV logging.'
 Assert-Contains $drawDebug 'neural_tracker_debug_enabled' `
     'Debug overlay must expose neural association debug labels.'
+Assert-Contains $drawGameOverlay 'ImGui::Checkbox\("Compensate Overlay Latency",\s*&config\.game_overlay_compensate_latency\)' `
+    'Game overlay settings must expose latency compensation.'
 
 $vcxproj = Read-Source 'sunone_aimbot_2/sunone_aimbot_2.vcxproj'
 $vcxprojFilters = Read-Source 'sunone_aimbot_2/sunone_aimbot_2.vcxproj.filters'
