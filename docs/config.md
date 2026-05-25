@@ -232,11 +232,11 @@ The Teensy path sends report-ID-prefixed 64-byte packets and expects matching fi
 |---|---:|---|
 | `neural_tracker_enabled` | `false` | Enables optional neural association/tracking. |
 | `neural_tracker_runtime` | `CPU` | `CPU` or `CUDA`. Invalid values become `CPU`. |
-| `neural_tracker_model_path` | `training/models/neural_tracker.onnx` | ONNX model path. |
+| `neural_tracker_model_path` | `models/neural_tracker.onnx` | ONNX model path. |
 | `neural_tracker_blend` | `0.35` | Blend amount between standard tracking and neural tracking. Clamped `0.0..1.0`. |
 | `neural_tracker_log_enabled` | `false` | Enables neural association logging. |
 | `neural_tracker_debug_enabled` | `false` | Enables extra neural tracker diagnostics. |
-| `neural_tracker_log_path` | `training/logs/neural_tracker_association.csv` | Log output path. |
+| `neural_tracker_log_path` | `logs/neural_tracker_association.csv` | Log output path. |
 
 If the model is missing or the feature is disabled, the app uses the normal tracking path.
 
@@ -247,9 +247,9 @@ If the model is missing or the feature is disabled, the app uses the normal trac
 | `pid_governor_enabled` | `false` | Enables PID governor settings in the Neural tab/config surface. |
 | `pid_governor_speed` | `5` | Speed slider value. Clamped `1..100`. |
 | `pid_governor_blend` | `50` | Blend slider value. Clamped `1..100`. |
-| `pid_governor_lead_percent` | `10` | Target velocity lead percentage for NanoSim/manual PID tuning. Clamped `0..50`. |
+| `pid_governor_lead_percent` | `10` | Target velocity lead percentage. Clamped `0..50`. |
 
-The current source packages PID governor training assets and exposes UI/config controls. The target lead value is wired into NanoSim for manual convergence testing. Runtime mouse-governor inference is not yet fully wired as a live replacement for the movement controller.
+The current source exposes PID governor UI/config controls. Runtime mouse-governor inference is not yet fully wired as a live replacement for the movement controller.
 
 ## CUDA
 
@@ -398,7 +398,6 @@ Data collection needs CPU-readable frames, so it can change capture performance 
 | `screenshot_delay` | `500` | Screenshot delay in milliseconds. |
 | `verbose` | `false` | Enables more logging. |
 
-`ai_debug.exe` reads the same config file and passes selected values such as backend, model path, available models, `auto_aim`, `button_pause`, capture FPS, detection thresholds, FOV, Circle FOV, input method, neural tracker blend, and PID governor settings into NanoSim for diagnostics. It does not add new `config.ini` keys and does not use the selected physical control method.
 
 ## Game Profiles
 

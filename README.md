@@ -1,115 +1,132 @@
-# Sunone Aimbot 2
+<div align="center">
 
-Sunone Aimbot 2 is a Windows C++ computer-vision project with two supported runtime families:
+# Sunone Aimbot 2 (C++)
 
-- **DirectML (DML)** for broad Windows GPU compatibility.
-- **CUDA + TensorRT (TRT)** for NVIDIA-focused performance.
+[![C++](https://img.shields.io/badge/C%2B%2B-17-blue)](https://github.com/SunOner/sunone_aimbot_2)
+[![GitHub stars](https://img.shields.io/github/stars/SunOner/sunone_aimbot_2?color=ffb500)](https://github.com/SunOner/sunone_aimbot_2)
+[![CUDA 13.1](https://img.shields.io/badge/CUDA-13.1-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-downloads)
+[![Discord server](https://badgen.net/discord/online-members/37WVp6sNEh)](https://discord.gg/37WVp6sNEh)
 
-The project includes screen capture, inference, target tracking, configurable mouse/control output, overlays, optional depth support, optional neural tracking assets, and build tooling for both DML and CUDA releases.
+  <p>
+    <a href="https://github.com/SunOner/sunone_aimbot_2/releases" target="_blank">
+      <img width="75%" src="https://github.com/SunOner/sunone_aimbot/blob/main/media/one.gif">
+    </a>
+  </p>
+</div>
 
-This repository is intended for research, experimentation, and learning. Use it only in environments where you have permission.
+---
 
-## Ready Builds
+# Ready-to-Use Builds (Recommended)
 
-| Build | Use this when | Notes |
-|---|---|---|
-| **DML** | You want the simplest Windows GPU path or do not have NVIDIA CUDA/TensorRT installed. | Uses ONNX models. Good compatibility, lower setup burden. |
-| **CUDA + TensorRT** | You have a supported NVIDIA GPU and want the fastest backend. | Uses TensorRT engines and CUDA acceleration. Setup is heavier but faster when configured correctly. |
+**You do NOT need to compile anything if you just want to use the aimbot!**
+Precompiled `.exe` builds are provided for both CUDA (NVIDIA only) and DirectML (all GPUs).
 
-Release packages are published here:
+* **Download**
+	* Pre-built binaries can be downloaded from the [Discord server](https://discord.gg/37WVp6sNEh) in the **pre-releases** channel.
 
-- [Latest releases](https://github.com/SunOner/sunone_aimbot_2/releases/latest)
+---
 
-## First Run
 
-1. Download either the **DML** or **CUDA** release.
-2. Extract the archive to a normal folder, not inside the ZIP.
-3. Run the included executable.
-4. Open the GUI or overlay to adjust capture, model, aiming, and control settings.
-5. Save settings from the GUI when possible. Manual config edits are supported, but the GUI helps avoid invalid values.
+### DirectML (DML) Build — Universal (All GPUs)
 
-The first generated config uses conservative defaults. You can tune capture FPS, model confidence, target offsets, control method, overlay behavior, and tracking settings after launch.
+* **Works on:**
 
-## Current Highlights
+	* Any modern GPU (NVIDIA, AMD, Intel, including integrated graphics)
+	* Windows 10/11 (x64)
+	* No need for CUDA or special drivers
+* **Recommended for:**
 
-### Capture and Inference
+	* GTX 10xx/9xx/7xx series (old NVIDIA)
+	* Any AMD Radeon or Intel Iris/Xe GPU
+	* Laptops and office PCs with integrated graphics
 
-- Desktop Duplication API capture is the normal capture path.
-- CUDA builds can use TensorRT with CUDA memory paths.
-- DML builds use ONNX models through DirectML.
-- The preview/debug window can intentionally force CPU copies because it needs pixels available on the CPU.
+### CUDA + TensorRT Build — High Performance (NVIDIA Only)
 
-### Circle FOV
+* **Works on:**
 
-The current recommended FOV limiter is **Circle FOV**, which is configured by radius and can be shown in the GUI preview or game overlay. The old `circle_mask` pixel mask remains available as a legacy option, but it is off by default because it can add CPU work and interfere with fast CUDA capture paths.
+	* NVIDIA GPUs **GTX 1660, RTX 2000/3000/4000/5000**
+	* **Requires:** CUDA 13.1, TensorRT-10.14.1.48
+	* Windows 10/11 (x64)
+* **Not supported:** GTX 10xx/Pascal and older (TensorRT limitation)
+* **Includes both CUDA+TensorRT and DML support (switchable in settings)**
 
-Detailed setup is in [docs/config.md](docs/config.md) and [docs/guides.md](docs/guides.md).
+**Both versions are ready-to-use: just download, unpack, run `ai.exe`.**
 
-### Control Methods
+---
 
-Supported control outputs include:
+## How to Run (For Precompiled Builds)
 
-- `WIN32`
-- `GHUB`
-- `RAZER`
-- `ARDUINO`
-- `RP2350`
-- `TEENSY41_HID`
-- `KMBOX_NET`
-- `KMBOX_A`
-- `MAKCU`
+1. **Download and unpack your chosen version (see links above).**
+2. For CUDA build, install [CUDA 13.1](https://developer.nvidia.com/cuda-13-1-0-download-archive) if not already installed.
+3. For DML build, no extra software is needed.
+4. **Run `ai.exe`.**
+   On first launch, the model will be exported (may take up to 5 minutes).
+5. Place your `.onnx` model in the `models` folder and select it in the overlay (HOME key).
+6. All settings are available in the overlay.
+   Use the HOME key to open/close overlay.
 
-Razer and Teensy support are explicit control paths. If one of those is selected and the matching device, DLL, or HID endpoint is not available, the project does **not** silently fall back to another control method.
+### Controls
 
-### Razer and Teensy
+* **Right Mouse Button:** Aim at the detected target
+* **F2:** Exit
+* **F3:** Pause aiming
+* **F4:** Reload config
+* **Home:** Open/close overlay and settings
 
-- Razer support loads `chroma_lighting.dll` dynamically from the runtime or module paths.
-- Teensy support targets `TEENSY41_HID` only and uses a RawHID-style packet interface.
-- Setup details are in [docs/config.md](docs/config.md) and [docs/guides.md](docs/guides.md).
+---
 
-### Neural Tracker and PID Governor
+# Build From Source (Advanced Users)
 
-The Neural tab includes optional neural tracker settings and PID governor controls. The neural tracker can load a model from the packaged `training/models` folder when available. PID governor settings are currently exposed in config/UI/training assets so they can be tuned and carried with builds; runtime mouse-governor inference is still a project integration area.
+* [docs/build.md](docs/build.md)
 
-### NanoSim Debug Harness
+---
 
-An optional `ai_debug.exe` target launches a separate NanoSim 3D diagnostic environment. It reads the same `config.ini`, starts in simulation-only mode, keeps hardware output out of the loop, and ranks convergence issues from simulator telemetry so controller, detection, timing, and tracking problems can be compared without changing the normal `ai.exe` runtime.
+## 📋 Documentation
 
-NanoSim now presents a Main GUI Mirror with the same high-level tabs as the app overlay. It mirrors the selected model and key knobs, including Auto Aim, confidence, NMS, FOV, Circle FOV, neural tracker blend, and PID governor speed/blend. In NanoSim, `F3` toggles simulation Auto Aim on/off, and the target is a procedural cartoon 3D character so model motion, pose, and convergence are easier to inspect visually.
+* C++ config reference (`config.ini`):
+  [docs/config.md](docs/config.md)
+* Setup, FAQ, troubleshooting:
+  [docs/guides.md](docs/guides.md)
+* Source of truth in code:
+  [sunone_aimbot_2/config/config.cpp](sunone_aimbot_2/config/config.cpp),
+  [sunone_aimbot_2/config/config.h](sunone_aimbot_2/config/config.h)
 
-## Build From Source
+---
 
-For most local development, use:
+## 📚 References & Useful Links
 
-```powershell
-.\BUILDER.bat
-```
+* [TensorRT Documentation](https://docs.nvidia.com/deeplearning/tensorrt/)
+* [OpenCV Documentation](https://docs.opencv.org/4.x/d1/dfb/intro.html)
+* [ImGui](https://github.com/ocornut/imgui)
+* [CppWinRT](https://github.com/microsoft/cppwinrt)
+* [GLFW](https://www.glfw.org/)
+* [WindMouse](https://ben.land/post/2021/04/25/windmouse-human-mouse-movement/)
+* [KMBOX](https://www.kmbox.top/)
+* [MAKCU](https://makcu.com)
+* [depth-anything-tensorrt](https://github.com/spacewalk01/depth-anything-tensorrt)
 
-or:
+---
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1
-```
+## 📄 Licenses
 
-There is also a faster local rebuild helper for already-prepared environments:
+### OpenCV
 
-```powershell
-.\build_no-options.bat
-```
+* **License:** [Apache License 2.0](https://opencv.org/license.html)
 
-Build details, prerequisites, output folders, and troubleshooting are in [docs/build.md](docs/build.md).
+### ImGui
 
-## Documentation
+* **License:** [MIT License](https://github.com/ocornut/imgui/blob/master/LICENSE)
 
-- [Build Guide](docs/build.md) - how to build DML, CUDA, and no-options local rebuilds.
-- [Configuration Guide](docs/config.md) - current config sections, defaults, and valid values.
-- [Usage and Troubleshooting Guides](docs/guides.md) - practical setup recipes and diagnostics.
-- [Implemented Changelog](CHANGELOG.md) - recent implementation details for controls, circle FOV, neural tracking, training assets, and builders.
+---
+## ❤️ Support the Project & Get Better AI Models
 
-## License
+This project is actively developed thanks to the people who support it on [Boosty](https://boosty.to/sunone) and [Patreon](https://www.patreon.com/c/sunone).
+**By supporting the project, you get access to improved and better-trained AI models!**
 
-This project follows the license included in the repository.
+---
 
-## Credits
+**Need help or want to contribute? Join our [Discord server](https://discord.gg/37WVp6sNEh) or open an issue on GitHub!**
 
-Sunone Aimbot 2 builds on a broad open-source ecosystem, including OpenCV, ONNX Runtime, DirectML, CUDA, TensorRT, Dear ImGui, hidapi, and other libraries listed in the source and build files.
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SunOner/sunone_aimbot_2&type=date&legend=top-left)](https://www.star-history.com/#SunOner/sunone_aimbot_2&type=date&legend=top-left)

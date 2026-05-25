@@ -9,7 +9,6 @@ param(
     [switch]$UseLatestPackages,
     [switch]$OpenBrowserForDownloads,
     [switch]$SkipOpenCvBuild,
-    [switch]$BuildDebugHarness,
     [string]$BuildDir = "",
     [ValidateSet("Release", "RelWithDebInfo", "MinSizeRel", "Debug", "")]
     [string]$Configuration = "",
@@ -51,7 +50,6 @@ if ($Help -or ($BuildArgs -contains "--help") -or ($BuildArgs -contains "/?")) {
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend DML"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend CUDA"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend CUDA -OpenCvAlreadyBuilt false -DownloadOrUpdateNeeded true"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend DML -BuildDebugHarness"
     Write-Host ""
     Write-Host "Any extra arguments are passed to tools/build_dml.ps1 or tools/build_cuda.ps1."
     exit 0
@@ -86,7 +84,6 @@ if ($PSBoundParameters.ContainsKey("DownloadOrUpdateNeeded")) {
 if ($UseLatestPackages) { $forwardedArgs += "-UseLatestPackages" }
 if ($Backend -eq "CUDA" -and $OpenBrowserForDownloads) { $forwardedArgs += "-OpenBrowserForDownloads" }
 if ($Backend -eq "CUDA" -and $SkipOpenCvBuild) { $forwardedArgs += "-SkipOpenCvBuild" }
-if ($BuildDebugHarness) { $forwardedArgs += "-BuildDebugHarness" }
 if (-not [string]::IsNullOrWhiteSpace($BuildDir)) {
     $forwardedArgs += @("-BuildDir", $BuildDir)
 }

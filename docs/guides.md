@@ -243,25 +243,6 @@ game_overlay_compensate_latency = false
 
 The movement trail is populated only after the selected input backend reports or accepts a movement. It does not introduce a fallback control path.
 
-## Training Assets and Base Models
-
-Project training tools live in:
-
-```text
-sunone_aimbot_2\modules\training
-```
-
-The build packages selected training scripts and base ONNX models into the runtime `training` folder. It does not package training datasets, caches, or tests.
-
-Expected base ONNX models:
-
-```text
-training\models\pid_governor.onnx
-training\models\neural_tracker.onnx
-```
-
-If a base model is missing during a full build, the builder tries to generate a synthetic dataset, train, and export an ONNX model. That requires Python and the training dependencies. If you do not want the builder to train, provide the ONNX files manually.
-
 ## Neural Tracker Guide
 
 Enable with:
@@ -269,7 +250,7 @@ Enable with:
 ```ini
 neural_tracker_enabled = true
 neural_tracker_runtime = CPU
-neural_tracker_model_path = training/models/neural_tracker.onnx
+neural_tracker_model_path = models/neural_tracker.onnx
 neural_tracker_blend = 0.35
 ```
 
@@ -298,7 +279,7 @@ Allowed ranges:
 - `pid_governor_blend`: `1..100`
 - `pid_governor_lead_percent`: `0..50`
 
-These controls are available in the Neural tab and are packaged with the training assets. `pid_governor_lead_percent` is passed into NanoSim for manual tuning of target-speed lead. In the current source, PID governor runtime inference is not yet fully wired into the live mouse movement path, so enabling the setting should be treated as experimental/preparatory.
+These controls are available in the Neural tab. Runtime mouse-governor inference is not yet fully wired into the live mouse movement path, so enabling the setting should be treated as experimental/preparatory.
 
 ## Data Collection Guide
 
@@ -329,37 +310,6 @@ Use the no-options builder after the backend already builds and you only changed
 ```
 
 The no-options builder only asks DML or CUDA and then builds the existing CMake target. It does not download, restore, update, or rebuild OpenCV.
-
-## NanoSim Debug Harness
-
-`ai_debug.exe` is an optional diagnostic executable separate from the main runtime. It reads the same `config.ini`, launches `debug\nano_sim_3d`, and opens NanoSim in simulation-only diagnostic mode.
-
-Build it by configuring a backend with the debug harness enabled:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend DML -BuildDebugHarness
-```
-
-After that, fast rebuilds can target only the harness:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build_no-options.ps1 -Backend DML -DebugHarness
-```
-
-The NanoSim page keeps POV mouse/camera movement available, but starts with NanoSim as the movement runtime so the simulator can auto-aim without touching hardware. Its Main GUI Mirror uses the same tab names as the main overlay and shows the current project model selection plus key knobs, including Auto Aim, confidence, NMS, capture FPS, detection size, FOV, Circle FOV, neural tracker blend, and PID governor speed/blend.
-
-Press `F3`, or the configured `button_pause` binding, to activate or deactivate simulation Auto Aim. This changes only the NanoSim controller state. The simulator keeps the target close to center and renders it as a procedural cartoon 3D character so convergence issues are easier to diagnose without first fighting extreme target motion.
-
-Convergence issues are ranked from most problematic to least across detection, tracking, controller, movement, runtime timing, and multi-module interaction evidence.
-
-For future program-in-the-loop testing, NanoSim exposes:
-
-```text
-window.nanoSimGetSnapshot()
-window.nanoSimApplyMovement(dx, dy)
-```
-
-Those browser APIs affect only the simulator environment. They do not call Razer, Teensy, Win32, or any other physical output path.
 
 ## Common Recipes
 

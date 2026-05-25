@@ -8,7 +8,6 @@ param(
     [object]$OpenCvAlreadyBuilt = $null,
     [object]$DownloadOrUpdateNeeded = $null,
     [switch]$UseLatestPackages,
-    [switch]$BuildDebugHarness,
     [switch]$NonInteractive,
     [switch]$DryRun,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -37,7 +36,6 @@ try {
     $ninja = Ensure-Ninja -AllowDownload:$allowDownloads -DryRun:$DryRun
     Restore-NuGetPackages -UseLatest:$UseLatestPackages -AllowDownload:$allowDownloads -DryRun:$DryRun
     Ensure-CoreSourceModules -AllowDownload:$allowDownloads -DryRun:$DryRun
-    Ensure-TrainingBaseModels -DryRun:$DryRun
 
     $opencvDmlRoot = Resolve-RepoPath "sunone_aimbot_2\modules\opencv\build\dml"
     $opencvLayout = Get-OpenCvWorldLayout -Root $opencvDmlRoot -Configuration $Configuration
@@ -88,7 +86,6 @@ try {
         "-G", $Generator,
         "-DCMAKE_MAKE_PROGRAM=$(ConvertTo-CMakePath $ninja)",
         "-DAIMBOT_USE_CUDA=OFF",
-        "-DAIMBOT_BUILD_DEBUG_HARNESS=$(if ($BuildDebugHarness) { 'ON' } else { 'OFF' })",
         "-DAIMBOT_ONNXRUNTIME_DIR=$(ConvertTo-CMakePath $onnxDir)",
         "-DAIMBOT_DIRECTML_DIR=$(ConvertTo-CMakePath $directMlDir)"
     )

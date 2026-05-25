@@ -20,16 +20,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(AIMBOT_USE_CUDA "Enable CUDA + TensorRT backend (USE_CUDA)" OFF)
 option(AIMBOT_COPY_RUNTIME_DLLS "Copy required runtime DLLs next to ai.exe after build" ON)
-option(AIMBOT_COPY_TRAINING_ASSETS "Copy deployable training scripts and base models next to ai.exe after build" ON)
-option(AIMBOT_BUILD_DEBUG_HARNESS "Build optional ai_debug NanoSim diagnostic harness" OFF)
 
 set(AIMBOT_PACKAGES_DIR "${CMAKE_SOURCE_DIR}/packages" CACHE PATH "Directory with restored NuGet packages")
-set(AIMBOT_TRAINING_SOURCE_DIR
-    "${CMAKE_SOURCE_DIR}/sunone_aimbot_2/modules/training"
-    CACHE PATH "Path to deployable training scripts and base models")
-set(AIMBOT_NANOSIM_SOURCE_DIR
-    "${CMAKE_SOURCE_DIR}/sunone_aimbot_2/modules/nano_sim_3d"
-    CACHE PATH "Path to NanoSim 3D debug harness assets")
 set(AIMBOT_OPENCV_DML_ROOT
     "${CMAKE_SOURCE_DIR}/sunone_aimbot_2/modules/opencv/build/dml"
     CACHE PATH "Path to DML OpenCV build root")
@@ -133,66 +125,6 @@ function(aimbot_copy_if_exists target path)
             VERBATIM
         )
     endif()
-endfunction()
-
-function(aimbot_copy_training_files target dest_subdir)
-    foreach(_path IN LISTS ARGN)
-        if(EXISTS "${_path}")
-            add_custom_command(
-                TARGET ${target}
-                POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/${dest_subdir}"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_path}" "$<TARGET_FILE_DIR:${target}>/${dest_subdir}"
-                VERBATIM
-            )
-        endif()
-    endforeach()
-endfunction()
-
-function(aimbot_copy_training_assets target)
-    if(NOT EXISTS "${AIMBOT_TRAINING_SOURCE_DIR}")
-        message(WARNING "Training source directory was not found. Training assets will not be copied: ${AIMBOT_TRAINING_SOURCE_DIR}")
-        return()
-    endif()
-
-    set(_training_root_files
-        "${AIMBOT_TRAINING_SOURCE_DIR}/README.md"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/requirements.txt"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/__init__.py"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/generate_pid_dataset.py"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/train_pid_governor.py"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/export_pid_governor_onnx.py"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/generate_neural_tracker_dataset.py"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/train_neural_tracker.py"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/export_neural_tracker_onnx.py")
-    file(GLOB _training_pid_files
-        "${AIMBOT_TRAINING_SOURCE_DIR}/pid_governor/*.py")
-    file(GLOB _training_neural_files
-        "${AIMBOT_TRAINING_SOURCE_DIR}/neural_tracker/*.py")
-    file(GLOB _training_model_files
-        "${AIMBOT_TRAINING_SOURCE_DIR}/models/*.onnx"
-        "${AIMBOT_TRAINING_SOURCE_DIR}/models/*.json")
-
-    aimbot_copy_training_files(${target} "training" ${_training_root_files})
-    aimbot_copy_training_files(${target} "training/pid_governor" ${_training_pid_files})
-    aimbot_copy_training_files(${target} "training/neural_tracker" ${_training_neural_files})
-    aimbot_copy_training_files(${target} "training/models" ${_training_model_files})
-endfunction()
-
-function(aimbot_copy_nanosim_assets target)
-    if(NOT EXISTS "${AIMBOT_NANOSIM_SOURCE_DIR}/server.mjs")
-        message(WARNING "NanoSim source directory was not found. ai_debug will start without copied simulator assets: ${AIMBOT_NANOSIM_SOURCE_DIR}")
-        return()
-    endif()
-
-    add_custom_command(
-        TARGET ${target}
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${target}>/debug/nano_sim_3d"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/debug"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${AIMBOT_NANOSIM_SOURCE_DIR}" "$<TARGET_FILE_DIR:${target}>/debug/nano_sim_3d"
-        VERBATIM
-    )
 endfunction()
 
 aimbot_pick_latest_dir(_onnxruntime_default "${AIMBOT_PACKAGES_DIR}/Microsoft.ML.OnnxRuntime.DirectML.*")
@@ -375,37 +307,6 @@ if(AIMBOT_USE_CUDA)
     )
 endif()
 
-if(AIMBOT_BUILD_DEBUG_HARNESS)
-    add_executable(ai_debug
-        "${SRC_DIR}/debug_harness/debug_main.cpp"
-        "${SRC_DIR}/config/config.cpp"
-    )
-
-    set_target_properties(ai_debug PROPERTIES
-        OUTPUT_NAME "ai_debug"
-    )
-
-    if(MSVC)
-        set_target_properties(ai_debug PROPERTIES
-            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-        )
-        target_compile_options(ai_debug PRIVATE
-            $<$<COMPILE_LANGUAGE:CXX>:/W3>
-            $<$<COMPILE_LANGUAGE:CXX>:/sdl>
-            $<$<COMPILE_LANGUAGE:CXX>:/permissive->
-            $<$<COMPILE_LANGUAGE:CXX>:/EHsc>
-        )
-    endif()
-
-    target_include_directories(ai_debug PRIVATE "${SRC_DIR}")
-    target_compile_definitions(ai_debug PRIVATE UNICODE _UNICODE _CONSOLE)
-    if(AIMBOT_USE_CUDA)
-        target_compile_definitions(ai_debug PRIVATE USE_CUDA)
-    endif()
-    target_link_libraries(ai_debug PRIVATE shell32)
-    aimbot_copy_nanosim_assets(ai_debug)
-endif()
-
 target_include_directories(ai PRIVATE
     "${SRC_DIR}"
     "${SRC_DIR}/capture"
@@ -552,10 +453,6 @@ if(AIMBOT_COPY_RUNTIME_DLLS)
         aimbot_copy_if_exists(ai "${AIMBOT_TENSORRT_ROOT}/bin/nvinfer_10.dll")
         aimbot_copy_if_exists(ai "${AIMBOT_TENSORRT_ROOT}/bin/nvonnxparser_10.dll")
     endif()
-endif()
-
-if(AIMBOT_COPY_TRAINING_ASSETS)
-    aimbot_copy_training_assets(ai)
 endif()
 
 message(STATUS "Aimbot backend: ${AIMBOT_USE_CUDA}")

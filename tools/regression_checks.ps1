@@ -464,14 +464,6 @@ $buildNoOptionsBatPath = Join-Path $repoRoot 'build_no-options.bat'
 $buildOpenCvCudaPath = Join-Path $repoRoot 'tools/build_opencv_cuda.ps1'
 $setupOpenCvDmlPath = Join-Path $repoRoot 'tools/setup_opencv_dml.ps1'
 $cmakePath = Join-Path $repoRoot 'CMakeLists.txt'
-$debugMainPath = Join-Path $repoRoot 'sunone_aimbot_2/debug_harness/debug_main.cpp'
-$nanoSimRootPath = Join-Path $repoRoot 'sunone_aimbot_2/modules/nano_sim_3d'
-$nanoSimIndexPath = Join-Path $nanoSimRootPath 'index.html'
-$nanoSimDiagPath = Join-Path $nanoSimRootPath 'src/diagnostic_analysis.js'
-$nanoSimAppPath = Join-Path $nanoSimRootPath 'src/app.js'
-$trainingRootPath = Join-Path $repoRoot 'sunone_aimbot_2/modules/training'
-$pidGovernorModelPath = Join-Path $trainingRootPath 'models/pid_governor.onnx'
-$neuralTrackerModelPath = Join-Path $trainingRootPath 'models/neural_tracker.onnx'
 
 Assert-FileExists $buildCommonPath 'Shared build automation helper must exist.'
 Assert-FileExists $buildCudaPsPath 'CUDA PowerShell build entry point must exist.'
@@ -480,13 +472,6 @@ Assert-FileExists $builderPath 'Root BUILDER launcher must exist.'
 Assert-FileExists $builderBatPath 'Root double-click BUILDER batch launcher must exist.'
 Assert-FileExists $buildNoOptionsPath 'No-options main-program build launcher must exist.'
 Assert-FileExists $buildNoOptionsBatPath 'Double-click no-options main-program build launcher must exist.'
-Assert-FileExists $debugMainPath 'Optional ai_debug launcher source must exist.'
-Assert-FileExists $nanoSimIndexPath 'NanoSim browser UI must exist.'
-Assert-FileExists $nanoSimDiagPath 'NanoSim convergence diagnostic analyzer must exist.'
-Assert-FileExists $nanoSimAppPath 'NanoSim browser app must exist.'
-Assert-FileExists $trainingRootPath 'Training modules must live under sunone_aimbot_2/modules/training.'
-Assert-FileExists $pidGovernorModelPath 'Training modules must carry a base PID governor ONNX model when available.'
-Assert-FileExists $neuralTrackerModelPath 'Training modules must carry a base neural tracker ONNX model when available.'
 
 $buildCommon = Get-Content -LiteralPath $buildCommonPath -Raw
 $buildCudaPs = Get-Content -LiteralPath $buildCudaPsPath -Raw
@@ -498,10 +483,6 @@ $buildNoOptionsBat = Get-Content -LiteralPath $buildNoOptionsBatPath -Raw
 $buildOpenCvCuda = Get-Content -LiteralPath $buildOpenCvCudaPath -Raw
 $setupOpenCvDml = Get-Content -LiteralPath $setupOpenCvDmlPath -Raw
 $cmake = Get-Content -LiteralPath $cmakePath -Raw
-$debugMain = Get-Content -LiteralPath $debugMainPath -Raw
-$nanoSimIndex = Get-Content -LiteralPath $nanoSimIndexPath -Raw
-$nanoSimDiag = Get-Content -LiteralPath $nanoSimDiagPath -Raw
-$nanoSimApp = Get-Content -LiteralPath $nanoSimAppPath -Raw
 
 Assert-Contains $buildCommon 'dependency-downloads\.json' `
     'Dependency automation must write a temporary download manifest.'
@@ -517,20 +498,8 @@ Assert-Contains $buildCommon 'tools\\\.bin' `
     'Build automation must have a repo-local tool cache for helper tools.'
 Assert-Contains $buildCommon 'Ensure-CoreSourceModules' `
     'Build automation must prepare required source modules automatically.'
-Assert-Contains $buildCommon 'function\s+Ensure-TrainingBaseModels' `
-    'Build automation must create base training ONNX models before packaging if they are missing.'
-Assert-Contains $buildCommon 'generate_pid_dataset\.py' `
-    'Build automation must know how to bootstrap the PID governor dataset.'
-Assert-Contains $buildCommon 'train_pid_governor\.py' `
-    'Build automation must know how to train the PID governor base model.'
-Assert-Contains $buildCommon 'export_pid_governor_onnx\.py' `
-    'Build automation must know how to export the PID governor base ONNX model.'
-Assert-Contains $buildCommon 'generate_neural_tracker_dataset\.py' `
-    'Build automation must know how to bootstrap the neural tracker dataset.'
-Assert-Contains $buildCommon 'train_neural_tracker\.py' `
-    'Build automation must know how to train the neural tracker base model.'
-Assert-Contains $buildCommon 'export_neural_tracker_onnx\.py' `
-    'Build automation must know how to export the neural tracker base ONNX model.'
+Assert-NotContains $buildCommon 'Ensure-TrainingBaseModels|modules\\training|generate_pid_dataset|train_pid_governor|train_neural_tracker' `
+    'Build automation must not depend on removed local training modules.'
 Assert-Contains $buildCommon 'brofield/simpleini/master/SimpleIni\.h' `
     'Build automation must download SimpleIni.h when it is missing.'
 Assert-Contains $buildCommon 'github\.com/wjwwood/serial\.git' `
@@ -554,27 +523,19 @@ Assert-NotContains $buildCudaPs '"TensorRT-10\*\.zip"' `
     'CUDA dependency guidance must not accept TensorRT source-only zip archives.'
 Assert-Contains $buildCudaPs 'valid Windows SDK layout' `
     'CUDA dependency setup must explain invalid TensorRT source archive layouts.'
-Assert-Contains $buildCudaPs 'Ensure-TrainingBaseModels' `
-    'CUDA build automation must ensure base training models before CMake packages assets.'
-Assert-Contains $buildCudaPs 'BuildDebugHarness' `
-    'CUDA build automation must be able to configure the optional NanoSim debug harness.'
-Assert-Contains $buildCudaPs 'AIMBOT_BUILD_DEBUG_HARNESS' `
-    'CUDA build automation must pass AIMBOT_BUILD_DEBUG_HARNESS to CMake.'
+Assert-NotContains $buildCudaPs 'Ensure-TrainingBaseModels|BuildDebugHarness|AIMBOT_BUILD_DEBUG_HARNESS' `
+    'CUDA build automation must not configure removed training or NanoSim debug harness modules.'
 
 Assert-Contains $buildDmlPs 'Ninja Multi-Config' `
     'DML project build must use Ninja Multi-Config by default.'
-Assert-Contains $buildDmlPs 'Ensure-TrainingBaseModels' `
-    'DML build automation must ensure base training models before CMake packages assets.'
 Assert-Contains $buildDmlPs 'Resolve-OptionalBoolean .*OpenCV already built' `
     'DML build must prompt whether OpenCV is already built.'
 Assert-Contains $buildDmlPs 'Resolve-OptionalBoolean .*Download or update needed files' `
     'DML build must prompt whether dependency downloads or updates are needed.'
 Assert-Contains $buildDmlPs 'modules\\opencv\\build\\dml' `
     'DML OpenCV root must live under modules/opencv/build/dml.'
-Assert-Contains $buildDmlPs 'BuildDebugHarness' `
-    'DML build automation must be able to configure the optional NanoSim debug harness.'
-Assert-Contains $buildDmlPs 'AIMBOT_BUILD_DEBUG_HARNESS' `
-    'DML build automation must pass AIMBOT_BUILD_DEBUG_HARNESS to CMake.'
+Assert-NotContains $buildDmlPs 'Ensure-TrainingBaseModels|BuildDebugHarness|AIMBOT_BUILD_DEBUG_HARNESS' `
+    'DML build automation must not configure removed training or NanoSim debug harness modules.'
 
 Assert-Contains $builder 'Select build backend' `
     'BUILDER must prompt for DML or CUDA.'
@@ -594,8 +555,8 @@ Assert-Contains $builder 'DownloadOrUpdateNeeded' `
     'BUILDER must forward dependency download choices to backend scripts.'
 Assert-Contains $builder 'DryRun' `
     'BUILDER must support non-destructive backend dry runs.'
-Assert-Contains $builder 'BuildDebugHarness' `
-    'BUILDER must forward optional debug harness builds to backend scripts.'
+Assert-NotContains $builder 'BuildDebugHarness' `
+    'BUILDER must not expose removed NanoSim debug harness builds.'
 Assert-Contains $builder '@forwardedArgs @BuildArgs' `
     'BUILDER must pass normalized flags before raw extra backend arguments.'
 Assert-Contains $builderBat 'Double-click deployment launcher' `
@@ -614,12 +575,10 @@ Assert-Contains $buildNoOptions 'cmake"\s+@buildArgs' `
     'build_no-options must call cmake --build directly instead of running dependency setup.'
 Assert-Contains $buildNoOptions '--build' `
     'build_no-options must run the main CMake build command.'
-Assert-Contains $buildNoOptions '\$target\s*=\s*if \(\$DebugHarness\) \{\s*"ai_debug"\s*\} else \{\s*"ai"\s*\}' `
-    'build_no-options must default to the main ai executable target.'
-Assert-Contains $buildNoOptions 'DebugHarness' `
-    'build_no-options must expose an explicit optional debug harness target switch.'
-Assert-Contains $buildNoOptions 'ai_debug' `
-    'build_no-options must be able to build only the optional ai_debug target.'
+Assert-Contains $buildNoOptions '--target",\s*"ai"' `
+    'build_no-options must build the main ai executable target.'
+Assert-NotContains $buildNoOptions 'DebugHarness|ai_debug' `
+    'build_no-options must not expose removed NanoSim debug harness targets.'
 Assert-Contains $buildNoOptions 'Import-VisualStudioEnvironment' `
     'build_no-options must import the Visual Studio compiler environment without running dependency setup.'
 Assert-NotContains $buildNoOptions 'tools\\build_dml|tools\\build_cuda|nuget|restore|DownloadOrUpdateNeeded|OpenCvAlreadyBuilt|Invoke-WebRequest|build_opencv|setup_opencv|UseLatestPackages|OpenBrowserForDownloads|Resolve-OptionalBoolean|Restore-NuGetPackages|Ensure-CoreSourceModules' `
@@ -665,14 +624,8 @@ Assert-Contains $cmake 'modules/opencv/build/cuda/install' `
     'CMake CUDA OpenCV default must use modules/opencv/build/cuda/install.'
 Assert-Contains $cmake 'detector/cuda_preprocess\.cu' `
     'CMake must compile the CUDA preprocessing kernel used by TensorRT GPU-frame preprocessing.'
-Assert-Contains $cmake 'AIMBOT_BUILD_DEBUG_HARNESS' `
-    'CMake must expose the optional NanoSim debug harness build switch.'
-Assert-Contains $cmake 'add_executable\(ai_debug' `
-    'CMake must build ai_debug as a separate executable when the debug harness is enabled.'
-Assert-Contains $cmake 'aimbot_copy_nanosim_assets' `
-    'CMake must copy NanoSim assets beside ai_debug.exe.'
-Assert-Contains $cmake 'debug/nano_sim_3d' `
-    'CMake must deploy NanoSim under the debug/nano_sim_3d runtime folder.'
+Assert-NotContains $cmake 'AIMBOT_BUILD_DEBUG_HARNESS|add_executable\(ai_debug|aimbot_copy_nanosim_assets|debug/nano_sim_3d' `
+    'CMake must not configure removed NanoSim debug harness targets or assets.'
 Assert-Contains $cmake 'mouse/rzctl\.cpp' `
     'CMake must compile the Razer runtime wrapper.'
 Assert-Contains $cmake 'mouse/Teensy41RawHid\.cpp' `
@@ -683,121 +636,8 @@ Assert-Contains $cmake 'neural/NeuralTracker\.cpp' `
     'CMake must compile neural tracker association runtime support.'
 Assert-Contains $cmake 'overlay/draw_neural\.cpp' `
     'CMake must compile the Neural overlay settings tab.'
-Assert-Contains $cmake 'AIMBOT_TRAINING_SOURCE_DIR' `
-    'CMake must treat modules/training as the source for deployable training assets.'
-Assert-Contains $cmake 'aimbot_copy_training_assets' `
-    'CMake must copy selected training scripts and models next to ai.exe after build.'
-Assert-Contains $cmake 'generate_pid_dataset\.py' `
-    'CMake must copy the PID dataset generator for deployable base-model workflows.'
-Assert-Contains $cmake 'train_pid_governor\.py' `
-    'CMake must copy the PID trainer for deployable base-model workflows.'
-Assert-Contains $cmake 'export_pid_governor_onnx\.py' `
-    'CMake must copy the PID ONNX exporter for deployable base-model workflows.'
-Assert-Contains $cmake 'generate_neural_tracker_dataset\.py' `
-    'CMake must copy the neural tracker dataset generator for deployable base-model workflows.'
-Assert-Contains $cmake 'train_neural_tracker\.py' `
-    'CMake must copy the neural tracker trainer for deployable base-model workflows.'
-Assert-Contains $cmake 'export_neural_tracker_onnx\.py' `
-    'CMake must copy the neural tracker ONNX exporter for deployable base-model workflows.'
-Assert-Contains $cmake 'models/\*\.onnx' `
-    'CMake must copy available base ONNX models into the output training/models folder.'
-Assert-NotContains $cmake '\$\{AIMBOT_TRAINING_SOURCE_DIR\}/\*\.py' `
-    'CMake must not deploy every root training script; only essential scripts should be copied.'
-Assert-NotContains $cmake 'training/data' `
-    'CMake must not deploy training data into runtime build folders.'
-Assert-NotContains $cmake 'yolo_workspace' `
-    'CMake must not deploy YOLO workspace data into runtime build folders.'
-
-Assert-Contains $debugMain 'Config runtimeConfig' `
-    'ai_debug must load the normal project config before launching NanoSim.'
-Assert-Contains $debugMain 'debugHarness=1&movement=simulation' `
-    'ai_debug must launch NanoSim with NanoSim as the default simulation-only movement runtime.'
-Assert-Contains $debugMain 'collectModelOptions' `
-    'ai_debug must discover deployable ONNX/engine models for the NanoSim model selector.'
-Assert-Contains $debugMain 'ai_model=' `
-    'ai_debug must pass the selected project model into NanoSim.'
-Assert-Contains $debugMain 'model_options=' `
-    'ai_debug must pass available model choices into NanoSim.'
-Assert-Contains $debugMain 'auto_aim=' `
-    'ai_debug must pass Auto Aim state into NanoSim.'
-Assert-Contains $debugMain 'button_pause=' `
-    'ai_debug must pass the pause binding into NanoSim for F3-style toggles.'
-Assert-Contains $debugMain 'confidence_threshold=' `
-    'ai_debug must pass detection confidence into NanoSim project runtime controls.'
-Assert-Contains $debugMain 'pid_governor_speed=' `
-    'ai_debug must pass PID governor speed into NanoSim project runtime controls.'
-Assert-Contains $debugMain 'pid_governor_lead_percent=' `
-    'ai_debug must pass PID governor target lead into NanoSim project runtime controls.'
-Assert-Contains $debugMain 'circle_fov_radius_percent=' `
-    'ai_debug must pass Circle FOV radius into NanoSim project runtime controls.'
-Assert-NotContains $debugMain 'MouseThread|SendInput|RzctlMouse|Teensy41RawHid|kmbox|KMBOX' `
-    'ai_debug must not directly instantiate or call physical mouse/control backends.'
-
-Assert-Contains $nanoSimIndex 'Project Runtime' `
-    'NanoSim must show project-shaped runtime controls instead of standalone controller controls.'
-Assert-Contains $nanoSimIndex 'Main GUI Mirror' `
-    'NanoSim must mirror the main GUI tabs for debug-harness settings.'
-Assert-Contains $nanoSimIndex 'id="mainGuiTabs"' `
-    'NanoSim must expose tab controls matching the main overlay.'
-Assert-Contains $nanoSimIndex 'Model Selector' `
-    'NanoSim must expose a model selector sourced from the project runtime.'
-Assert-Contains $nanoSimIndex 'id="autoAimToggle"' `
-    'NanoSim must expose Auto Aim as a project-facing target setting.'
-Assert-Contains $nanoSimIndex 'id="aimModeValue"' `
-    'NanoSim must show whether simulation Auto Aim is active or paused.'
-Assert-Contains $nanoSimIndex 'id="confidenceThreshold"' `
-    'NanoSim must expose the project confidence threshold knob.'
-Assert-Contains $nanoSimIndex 'id="nmsThreshold"' `
-    'NanoSim must expose the project NMS threshold knob.'
-Assert-Contains $nanoSimIndex 'id="pidGovernorSpeed"' `
-    'NanoSim must expose the PID governor speed knob.'
-Assert-Contains $nanoSimIndex 'id="pidGovernorBlend"' `
-    'NanoSim must expose the PID governor blend knob.'
-Assert-Contains $nanoSimIndex 'id="pidGovernorLead"' `
-    'NanoSim must expose the PID governor target lead knob.'
-Assert-Contains $nanoSimIndex 'id="circleFovRadius"' `
-    'NanoSim must expose the Circle FOV radius knob.'
-Assert-Contains $nanoSimIndex 'id="simDefaults"[^>]*hidden' `
-    'NanoSim internal simulator defaults must stay hidden from the project-facing debug UI.'
-Assert-NotContains $nanoSimIndex '>Controller Diagnostics<' `
-    'NanoSim must not expose old standalone controller diagnostics as visible controls.'
-Assert-NotContains $nanoSimIndex '>Trainer Monitor<' `
-    'NanoSim must not expose old standalone trainer controls as visible controls.'
-Assert-NotContains $nanoSimIndex '>Internal Controller Steers<' `
-    'NanoSim must not expose the old internal controller steering toggle.'
-Assert-NotContains $nanoSimIndex '>Simulation Movement Sink<' `
-    'NanoSim must not expose the old movement sink toggle.'
-
-Assert-Contains $nanoSimDiag 'rankConvergenceIssues' `
-    'NanoSim must rank convergence issues for the debug harness.'
-Assert-Contains $nanoSimDiag 'multi_module_interaction' `
-    'NanoSim diagnostics must detect multiple modules contributing to convergence issues.'
-Assert-Contains $nanoSimApp 'window\.nanoSimGetSnapshot' `
-    'NanoSim must expose telemetry snapshots to the debug harness.'
-Assert-Contains $nanoSimApp 'window\.nanoSimApplyMovement' `
-    'NanoSim must expose a simulation-only movement injection API.'
-Assert-Contains $nanoSimApp 'controllerSteersView\.disabled\s*=\s*state\.debugHarness' `
-    'NanoSim debug mode must disable internal controller steering as a movement source.'
-Assert-Contains $nanoSimApp 'handleAutoAimHotkey' `
-    'NanoSim must toggle simulation Auto Aim from the configured pause binding.'
-Assert-Contains $nanoSimApp 'shouldApplySimulationAim' `
-    'NanoSim must gate controller movement on simulation Auto Aim state.'
-Assert-Contains $nanoSimApp 'createCartoonTargetRig' `
-    'NanoSim must render a dynamic procedural cartoon target without vendored model dependencies.'
-Assert-Contains $nanoSimApp 'populateModelSelect' `
-    'NanoSim must populate its model selector from ai_debug launch settings.'
-Assert-Contains $nanoSimApp 'collectProjectKnobSnapshot' `
-    'NanoSim must collect project-shaped GUI knobs into the runtime snapshot.'
-Assert-Contains $nanoSimApp 'syncProjectKnobs' `
-    'NanoSim must keep visible project knobs synchronized with simulator timing inputs.'
-Assert-Contains $nanoSimApp 'model_options' `
-    'NanoSim must parse model choices from ai_debug launch settings.'
-Assert-Contains $nanoSimApp 'pid_governor_lead_percent' `
-    'NanoSim must parse PID governor target lead from ai_debug launch settings.'
-Assert-Contains $nanoSimApp 'velocityLeadPercent' `
-    'NanoSim controller settings must receive the PID governor target lead percentage.'
-Assert-Contains $nanoSimApp 'rankConvergenceIssues\(state\.diagnosticSamples\)' `
-    'NanoSim app must feed recent telemetry into the convergence issue ranker.'
+Assert-NotContains $cmake 'AIMBOT_TRAINING_SOURCE_DIR|aimbot_copy_training_assets|modules/training|training/data|yolo_workspace' `
+    'CMake must not package removed training modules or YOLO workspace data.'
 Assert-NotContains $drawNeural 'NANOSIM' `
     'Production overlay tabs must not add NanoSim as a physical control method.'
 

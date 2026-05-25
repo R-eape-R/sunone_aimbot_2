@@ -1,7 +1,0 @@
-path: C:\Users\donar\sunone_aimbot_2\training\yolo_workspace
-train: images/train
-val: images/val
-test: images/test
-names:
-  0: player
-  1: head

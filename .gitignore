@@ -1,6 +1,11 @@
 # Prerequisites
 *.d
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Compiled Object files
 *.slo
 *.lo

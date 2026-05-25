@@ -179,11 +179,11 @@ bool Config::loadConfig(const std::string& filename)
         // Neural tracker association
         neural_tracker_enabled = false;
         neural_tracker_runtime = "CPU";
-        neural_tracker_model_path = "training/models/neural_tracker.onnx";
+        neural_tracker_model_path = "models/neural_tracker.onnx";
         neural_tracker_blend = 0.35f;
         neural_tracker_log_enabled = false;
         neural_tracker_debug_enabled = false;
-        neural_tracker_log_path = "training/logs/neural_tracker_association.csv";
+        neural_tracker_log_path = "logs/neural_tracker_association.csv";
 
         // PID governor controls
         pid_governor_enabled = false;
@@ -538,11 +538,11 @@ bool Config::loadConfig(const std::string& filename)
     // Neural tracker association
     neural_tracker_enabled = get_bool("neural_tracker_enabled", false);
     neural_tracker_runtime = get_string("neural_tracker_runtime", "CPU");
-    neural_tracker_model_path = get_string("neural_tracker_model_path", "training/models/neural_tracker.onnx");
+    neural_tracker_model_path = get_string("neural_tracker_model_path", "models/neural_tracker.onnx");
     neural_tracker_blend = (float)get_double("neural_tracker_blend", 0.35);
     neural_tracker_log_enabled = get_bool("neural_tracker_log_enabled", false);
     neural_tracker_debug_enabled = get_bool("neural_tracker_debug_enabled", false);
-    neural_tracker_log_path = get_string("neural_tracker_log_path", "training/logs/neural_tracker_association.csv");
+    neural_tracker_log_path = get_string("neural_tracker_log_path", "logs/neural_tracker_association.csv");
 
     // PID governor controls
     pid_governor_enabled = get_bool("pid_governor_enabled", false);
@@ -727,11 +727,11 @@ bool Config::loadConfig(const std::string& filename)
     if (neural_tracker_runtime != "CPU" && neural_tracker_runtime != "CUDA")
         neural_tracker_runtime = "CPU";
     if (neural_tracker_model_path.empty())
-        neural_tracker_model_path = "training/models/neural_tracker.onnx";
+        neural_tracker_model_path = "models/neural_tracker.onnx";
     if (neural_tracker_blend < 0.0f) neural_tracker_blend = 0.0f;
     if (neural_tracker_blend > 1.0f) neural_tracker_blend = 1.0f;
     if (neural_tracker_log_path.empty())
-        neural_tracker_log_path = "training/logs/neural_tracker_association.csv";
+        neural_tracker_log_path = "logs/neural_tracker_association.csv";
 
     if (pid_governor_speed < 1) pid_governor_speed = 1;
     if (pid_governor_speed > 100) pid_governor_speed = 100;

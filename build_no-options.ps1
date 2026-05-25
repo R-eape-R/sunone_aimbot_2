@@ -6,7 +6,6 @@ param(
     [string]$Configuration = "Release",
     [switch]$Help,
     [switch]$NonInteractive,
-    [switch]$DebugHarness,
     [switch]$DryRun
 )
 
@@ -42,10 +41,8 @@ if ($Help) {
     Write-Host "  .\build_no-options.bat"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\build_no-options.ps1 -Backend DML"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\build_no-options.ps1 -Backend CUDA"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\build_no-options.ps1 -Backend DML -DebugHarness"
     Write-Host ""
     Write-Host "Runs cmake --build against an existing build tree. Dependencies and OpenCV must already be prepared."
-    Write-Host "Use -DebugHarness only after the build tree was configured with AIMBOT_BUILD_DEBUG_HARNESS=ON."
     exit 0
 }
 
@@ -68,15 +65,12 @@ if (-not (Test-Path -LiteralPath $buildPath)) {
     throw "Build tree not found: $buildPath. Run BUILDER first to prepare dependencies and configure this backend."
 }
 
-$target = if ($DebugHarness) { "ai_debug" } else { "ai" }
-$targetDescription = if ($DebugHarness) { "debug harness" } else { "main-program" }
-
-Write-Host "[build_no-options] Running $Backend $targetDescription build..."
+Write-Host "[build_no-options] Running $Backend main-program build..."
 
 $buildArgs = @(
     "--build", $buildPath,
     "--config", $Configuration,
-    "--target", $target,
+    "--target", "ai",
     "--parallel"
 )
 

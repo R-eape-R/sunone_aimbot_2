@@ -8,7 +8,7 @@ This guide explains the current build system in plain terms first, then adds the
 |---|---|---|
 | `BUILDER.bat` | Most people building from source. | Opens an interactive choice for DML or CUDA, prepares dependencies, configures CMake, and builds. |
 | `BUILDER.ps1` | Same as above, but easier to script. | Lets you pass `-Backend DML` or `-Backend CUDA` directly. |
-| `build_no-options.bat` | Fast local rebuilds after the full build already worked once. | Rebuilds `ai` from an existing build tree, or `ai_debug` with `-DebugHarness`. No downloads, updates, NuGet restore, OpenCV setup, or dependency prompts. |
+| `build_no-options.bat` | Fast local rebuilds after the full build already worked once. | Rebuilds `ai` from an existing build tree. No downloads, updates, NuGet restore, OpenCV setup, or dependency prompts. |
 | `tools/build_dml.ps1` | Direct DML backend build. | Restores DML/ONNX dependencies and prepares the DML build tree. |
 | `tools/build_cuda.ps1` | Direct CUDA/TensorRT backend build. | Resolves CUDA/TensorRT/OpenCV CUDA dependencies and prepares the CUDA build tree. |
 
@@ -23,7 +23,6 @@ If you are unsure, run `BUILDER.bat`.
 - Windows SDK with C++/WinRT headers.
 - CMake.
 - PowerShell.
-- Python if the build needs to bootstrap missing training base models.
 
 The builder can download or restore some project dependencies when you allow it. It cannot install Visual Studio for you.
 
@@ -89,7 +88,6 @@ Useful options:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend CUDA -OpenCvAlreadyBuilt true
 powershell -NoProfile -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend CUDA -DownloadOrUpdateNeeded false
 powershell -NoProfile -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend DML -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend DML -BuildDebugHarness
 ```
 
 `BUILDER.ps1` forwards backend-specific arguments to `tools/build_dml.ps1` or `tools/build_cuda.ps1`.
@@ -117,14 +115,6 @@ cmake --build build\<backend> --config Release --target ai --parallel
 
 It is useful when you changed C++ or UI code and want a quick rebuild. It is not a dependency setup tool. If the build tree is missing, stale, or configured for the wrong dependency paths, run `BUILDER.bat` again.
 
-To rebuild the optional NanoSim debug target from an already-configured tree:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build_no-options.ps1 -Backend DML -DebugHarness
-```
-
-That target exists only if the build tree was configured with `AIMBOT_BUILD_DEBUG_HARNESS=ON`.
-
 ## Direct Backend Scripts
 
 DML:
@@ -146,7 +136,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_cuda.ps1 -Cuda
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_cuda.ps1 -CudaArchBin all
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_cuda.ps1 -SkipOpenCvBuild
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_dml.ps1 -UseLatestPackages
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_dml.ps1 -BuildDebugHarness
 ```
 
 `-CudaArchBin all` expands to:
@@ -164,14 +153,7 @@ build\dml\Release\ai.exe
 build\cuda\Release\ai.exe
 ```
 
-When the debug harness is enabled, the additional output is:
-
-```text
-build\<backend>\Release\ai_debug.exe
-build\<backend>\Release\debug\nano_sim_3d
-```
-
-The output folder also receives runtime DLLs and selected assets that the executable needs at runtime. `ai_debug.exe` launches NanoSim in simulation mode by default, passes the current model/config knobs into the browser UI, and does not instantiate Razer, Teensy, Win32, kmbox, or other physical output paths.
+The output folder also receives runtime DLLs and selected assets that the executable needs at runtime.
 
 ## Runtime Files Copied by CMake
 
@@ -193,48 +175,12 @@ sunone_aimbot_2\modules\razer-controls\x64\Release\chroma_lighting.dll
 
 You can override its CMake cache path with `AIMBOT_RAZER_CONTROL_DLL`.
 
-## Training Assets
-
-The project copy of training tools lives here:
-
-```text
-sunone_aimbot_2\modules\training
-```
-
-When `AIMBOT_COPY_TRAINING_ASSETS` is enabled, CMake copies deployable training files to the runtime `training` folder:
-
-- Selected root training scripts.
-- PID governor helper scripts.
-- Neural tracker helper scripts.
-- Available `training\models\*.onnx` and matching metadata JSON files.
-
-It intentionally does **not** copy training datasets, caches, tests, or large working data folders.
-
-Before configuring CMake, the full DML/CUDA builders call the training bootstrap step. If a base ONNX model is missing, the builder attempts to run:
-
-- generate dataset
-- train
-- export ONNX
-
-for the missing base model. If Python or training dependencies are not available, either install the requirements for `sunone_aimbot_2\modules\training` or provide the expected ONNX model files manually.
-
-Expected base model names:
-
-```text
-sunone_aimbot_2\modules\training\models\pid_governor.onnx
-sunone_aimbot_2\modules\training\models\neural_tracker.onnx
-```
-
 ## Important CMake Options
 
 | Option | Meaning |
 |---|---|
 | `AIMBOT_USE_CUDA` | `ON` for CUDA + TensorRT, `OFF` for DML. |
 | `AIMBOT_COPY_RUNTIME_DLLS` | Copies runtime DLLs beside `ai.exe`. |
-| `AIMBOT_COPY_TRAINING_ASSETS` | Copies selected training scripts and base models beside `ai.exe`. |
-| `AIMBOT_BUILD_DEBUG_HARNESS` | Builds the separate `ai_debug.exe` NanoSim diagnostic harness. |
-| `AIMBOT_TRAINING_SOURCE_DIR` | Source folder for deployable training assets. |
-| `AIMBOT_NANOSIM_SOURCE_DIR` | Source folder copied beside `ai_debug.exe` as `debug\nano_sim_3d`. |
 | `AIMBOT_RAZER_CONTROL_DLL` | Source path for `chroma_lighting.dll`. |
 | `AIMBOT_OPENCV_DML_ROOT` | DML OpenCV layout root. |
 | `AIMBOT_OPENCV_CUDA_ROOT` | CUDA OpenCV layout root. |
@@ -294,4 +240,3 @@ This checks important source contracts such as:
 | Missing `chroma_lighting.dll` | Build or copy the Razer controls DLL to `sunone_aimbot_2\modules\razer-controls\x64\Release\chroma_lighting.dll` or next to `ai.exe`. |
 | Training bootstrap fails | Install training requirements or place the expected `.onnx` files in `sunone_aimbot_2\modules\training\models`. |
 | App runs but Razer or Teensy control does nothing | The selected control method does not fall back. Check the selected `input_method`, the Razer DLL, or the Teensy RawHID endpoint. |
-| `ai_debug.exe` opens NanoSim but Auto Aim is paused | Press the configured pause binding, normally `F3`, or enable Auto Aim in NanoSim's Target tab. The toggle affects only the simulator. |

@@ -10,7 +10,6 @@ param(
     [switch]$UseLatestPackages,
     [switch]$OpenBrowserForDownloads,
     [switch]$SkipOpenCvBuild,
-    [switch]$BuildDebugHarness,
     [string]$CudaArchBin = "",
     [switch]$NonInteractive,
     [switch]$DryRun,
@@ -40,7 +39,6 @@ try {
     $ninja = Ensure-Ninja -AllowDownload:$allowDownloads -DryRun:$DryRun
     Restore-NuGetPackages -UseLatest:$UseLatestPackages -AllowDownload:$allowDownloads -DryRun:$DryRun
     Ensure-CoreSourceModules -AllowDownload:$allowDownloads -DryRun:$DryRun
-    Ensure-TrainingBaseModels -DryRun:$DryRun
 
     $resolution = Get-BestCompatibleCudaDependencySet
     if (-not [string]::IsNullOrWhiteSpace($CudaArchBin)) {
@@ -182,7 +180,6 @@ try {
         "-G", $Generator,
         "-DCMAKE_MAKE_PROGRAM=$(ConvertTo-CMakePath $ninja)",
         "-DAIMBOT_USE_CUDA=ON",
-        "-DAIMBOT_BUILD_DEBUG_HARNESS=$(if ($BuildDebugHarness) { 'ON' } else { 'OFF' })",
         "-DAIMBOT_TENSORRT_ROOT=$(ConvertTo-CMakePath $resolution.TensorRtRoot)",
         "-DAIMBOT_ONNXRUNTIME_DIR=$(ConvertTo-CMakePath $onnxDir)",
         "-DCMAKE_CUDA_FLAGS=--allow-unsupported-compiler",
