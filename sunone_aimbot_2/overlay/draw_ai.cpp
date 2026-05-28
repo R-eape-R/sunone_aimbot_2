@@ -12,6 +12,7 @@
 #include "draw_settings.h"
 #include "overlay/ui_sections.h"
 #ifdef USE_CUDA
+#include "overlay/export_progress_panel.h"
 #include "trt_monitor.h"
 #endif
 
@@ -37,52 +38,12 @@ void draw_ai()
 #ifdef USE_CUDA
     if (gIsTrtExporting)
     {
-        ImGui::OpenPopup("TensorRT Export Progress");
-    }
-
-    if (ImGui::BeginPopupModal("TensorRT Export Progress", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        bool hasPhases = false;
-        {
-            std::lock_guard<std::mutex> lock(gProgressMutex);
-            hasPhases = !gProgressPhases.empty();
-            if (hasPhases)
-            {
-                for (auto& [name, phase] : gProgressPhases)
-                {
-                    float percent = phase.max > 0 ? phase.current / float(phase.max) : 0.0f;
-                    ImGui::Text("%s: %d/%d", name.c_str(), phase.current, phase.max);
-                    ImGui::ProgressBar(percent, ImVec2(300, 0));
-                }
-            }
-        }
-        if (!hasPhases)
-        {
-            ImGui::CloseCurrentPopup();
-        }
-
-        ImGui::Text("Engine export in progress, please wait...");
-        long long lastUpdate = gTrtExportLastUpdateMs.load();
-        if (lastUpdate > 0)
-        {
-            double secondsSince = (TrtNowMs() - lastUpdate) / 1000.0;
-            ImGui::Text("Last progress update: %.1f s ago", secondsSince);
-        }
-        bool cancelRequested = gTrtExportCancelRequested.load();
-        if (cancelRequested)
-        {
-            ImGui::BeginDisabled();
-        }
-        if (ImGui::Button("Cancel export"))
-        {
-            gTrtExportCancelRequested = true;
-        }
-        if (cancelRequested)
-        {
-            ImGui::EndDisabled();
-            ImGui::Text("Cancel requested...");
-        }
-        ImGui::EndPopup();
+        OverlayExportUI::DrawTensorRtExportPanel(
+            "ai_tensor_rt_export",
+            "TensorRT engine export",
+            "Compiling optimized AI inference engine",
+            config.ai_model.c_str(),
+            "Cancel export");
     }
 #endif
     std::vector<std::string> availableModels = getAvailableModels();
@@ -110,17 +71,22 @@ void draw_ai()
                 modelsItems.push_back(modelName.c_str());
             }
 
-            if (ImGui::Combo("Model", &currentModelIndex, modelsItems.data(), static_cast<int>(modelsItems.size())))
             {
-                if (config.ai_model != availableModels[currentModelIndex])
+                const auto row = OverlayUI::BeginSettingRow("Model");
+                if (ImGui::Combo("##model", &currentModelIndex, modelsItems.data(), static_cast<int>(modelsItems.size())))
                 {
-                    config.ai_model = availableModels[currentModelIndex];
-                    OverlayConfig_MarkDirty();
-                    detector_model_changed.store(true);
+                    if (config.ai_model != availableModels[currentModelIndex])
+                    {
+                        config.ai_model = availableModels[currentModelIndex];
+                        OverlayConfig_MarkDirty();
+                        detector_model_changed.store(true);
+                    }
                 }
+                OverlayUI::EndSettingRow(row);
             }
-            ImGui::SameLine();
-            ImGui::Text("Fixed model size: %s", config.fixed_input_size ? "Enabled" : "Disabled");
+
+            OverlayUI::TextRow(config.fixed_input_size ? "Fixed model size: Enabled" : "Fixed model size: Disabled",
+                IM_COL32(188, 188, 188, 255));
         }
         OverlayUI::EndSection();
     }
@@ -133,21 +99,25 @@ void draw_ai()
 
         int currentBackendIndex = config.backend == "DML" ? 1 : 0;
 
-        if (ImGui::Combo("Backend", &currentBackendIndex, backendItems.data(), static_cast<int>(backendItems.size())))
         {
-            std::string newBackend = backendOptions[currentBackendIndex];
-            if (config.backend != newBackend)
+            const auto row = OverlayUI::BeginSettingRow("Backend");
+            if (ImGui::Combo("##backend", &currentBackendIndex, backendItems.data(), static_cast<int>(backendItems.size())))
             {
-                config.backend = newBackend;
-                std::vector<std::string> compatibleModels = getAvailableModels();
-                if (!compatibleModels.empty() &&
-                    std::find(compatibleModels.begin(), compatibleModels.end(), config.ai_model) == compatibleModels.end())
+                std::string newBackend = backendOptions[currentBackendIndex];
+                if (config.backend != newBackend)
                 {
-                    config.ai_model = compatibleModels[0];
+                    config.backend = newBackend;
+                    std::vector<std::string> compatibleModels = getAvailableModels();
+                    if (!compatibleModels.empty() &&
+                        std::find(compatibleModels.begin(), compatibleModels.end(), config.ai_model) == compatibleModels.end())
+                    {
+                        config.ai_model = compatibleModels[0];
+                    }
+                    OverlayConfig_MarkDirty();
+                    detector_model_changed.store(true);
                 }
-                OverlayConfig_MarkDirty();
-                detector_model_changed.store(true);
             }
+            OverlayUI::EndSettingRow(row);
         }
         OverlayUI::EndSection();
     }
@@ -155,9 +125,23 @@ void draw_ai()
 
     if (OverlayUI::BeginSection("Detection", "ai_section_detection"))
     {
-        ImGui::SliderFloat("Confidence Threshold", &config.confidence_threshold, 0.01f, 1.00f, "%.2f");
-        ImGui::SliderFloat("NMS Threshold", &config.nms_threshold, 0.00f, 1.00f, "%.2f");
-        ImGui::SliderInt("Max Detections", &config.max_detections, 1, 100);
+        {
+            const auto row = OverlayUI::BeginSettingRow("Confidence Threshold");
+            ImGui::SliderFloat("##confidence_threshold", &config.confidence_threshold, 0.01f, 1.00f, "%.2f");
+            OverlayUI::EndSettingRow(row);
+        }
+
+        {
+            const auto row = OverlayUI::BeginSettingRow("NMS Threshold");
+            ImGui::SliderFloat("##nms_threshold", &config.nms_threshold, 0.00f, 1.00f, "%.2f");
+            OverlayUI::EndSettingRow(row);
+        }
+
+        {
+            const auto row = OverlayUI::BeginSettingRow("Max Detections");
+            ImGui::SliderInt("##max_detections", &config.max_detections, 1, 100);
+            OverlayUI::EndSettingRow(row);
+        }
         OverlayUI::EndSection();
     }
 

@@ -59,6 +59,7 @@ packages
 /sunone_aimbot_2/modules/glfw-3.4.bin.WIN64
 /sunone_aimbot_2/imgui.ini
 /sunone_aimbot_2/models
+/sunone_aimbot_2/depth_models/*.engine
 /sunone_aimbot_2/modules/SimpleIni.h
 /sunone_aimbot_2/modules/serial
 /sunone_aimbot_2/modules/licenseguard

@@ -18,6 +18,7 @@ namespace depth_anything
         ~DepthAnythingTrt();
 
         bool initialize(const std::string& modelPath, nvinfer1::ILogger& logger);
+        bool exportEngine(const std::string& modelPath, nvinfer1::ILogger& logger, std::string* enginePath = nullptr);
         cv::Mat predict(const cv::Mat& image);
         cv::Mat predictDepth(const cv::Mat& image);
         void setColormap(int type);
@@ -64,7 +65,7 @@ namespace depth_anything
         bool runInference(const cv::Mat& image, cv::Mat& depth_norm);
         bool loadEngine(const std::string& modelPath, nvinfer1::ILogger& logger);
         bool buildEngine(const std::string& onnxPath, nvinfer1::ILogger& logger);
-        bool saveEngine(const std::string& onnxPath);
+        bool saveEngine(const std::string& onnxPath, std::string* enginePath = nullptr);
     };
 }
 

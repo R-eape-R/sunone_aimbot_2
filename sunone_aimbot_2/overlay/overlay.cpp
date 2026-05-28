@@ -66,16 +66,16 @@ ID3D11BlendState* g_pBlendState = nullptr;
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-const int BASE_OVERLAY_WIDTH = 720;
-const int BASE_OVERLAY_HEIGHT = 500;
-static const int MIN_EDITOR_OPACITY = 220;
+const int BASE_OVERLAY_WIDTH = 860;
+const int BASE_OVERLAY_HEIGHT = 526;
+static const int MIN_EDITOR_OPACITY = 252;
 
 int overlayWidth = 0;
 int overlayHeight = 0;
 
-static const int DRAG_BAR_HEIGHT_PX = 30;
-static const int MIN_OVERLAY_W = 420;
-static const int MIN_OVERLAY_H = 300;
+static const int DRAG_BAR_HEIGHT_PX = 34;
+static const int MIN_OVERLAY_W = 560;
+static const int MIN_OVERLAY_H = 340;
 static const int RESIZE_BORDER_PX = 8;
 static const int WORKAREA_MARGIN_PX = 20;
 
@@ -136,29 +136,12 @@ static void ApplyRuntimeUiScale()
 
 static void TryAutoResizeOverlay(float extraContentWidth)
 {
+    IM_UNUSED(extraContentWidth);
     if (!g_hwnd || !g_autoResizeEnabled)
         return;
 
-    // Keep auto-grow only for severe horizontal overflow.
-    if (extraContentWidth <= 120.0f)
-        return;
-
-    const int extraPx = ClampInt(static_cast<int>(extraContentWidth + 0.5f), 0, 260);
-    if (extraPx <= 0)
-        return;
-
-    RECT wndRect{};
-    ::GetWindowRect(g_hwnd, &wndRect);
-
-    int targetX = wndRect.left;
-    int targetY = wndRect.top;
-    int targetW = overlayWidth + extraPx;
-    int targetH = overlayHeight; // Height is user-controlled; content area already scrolls vertically.
-
-    ClampOverlayToWorkArea(g_hwnd, targetX, targetY, targetW, targetH);
-
-    if (targetW != overlayWidth || targetX != wndRect.left || targetY != wndRect.top)
-        SetWindowPos(g_hwnd, NULL, targetX, targetY, targetW, targetH, SWP_NOZORDER);
+    // Keep the editor size stable. Long model names and combo popups should clip/scroll,
+    // not grow the overlay frame across the screen.
 }
 
 void Overlay_SetOpacity(int opacity255)
@@ -206,18 +189,20 @@ static inline ImVec4 RGBA(int r, int g, int b, int a = 255)
     return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
 }
 
-static void ApplyTheme_CompactDark()
+static void ApplyTheme_Windows11Dark()
 {
     ImGuiStyle& style = ImGui::GetStyle();
     style.Alpha = 1.0f;
+    style.DisabledAlpha = 0.48f;
 
-    style.WindowRounding = 6.0f;
-    style.ChildRounding = 5.0f;
+    style.WindowRounding = 8.0f;
+    style.ChildRounding = 8.0f;
     style.PopupRounding = 5.0f;
-    style.FrameRounding = 4.0f;
-    style.TabRounding = 4.0f;
-    style.ScrollbarRounding = 4.0f;
-    style.GrabRounding = 4.0f;
+    style.FrameRounding = 6.0f;
+    style.TabRounding = 6.0f;
+    style.ScrollbarRounding = 8.0f;
+    style.GrabRounding = 6.0f;
+    style.ImageRounding = 6.0f;
 
     style.WindowBorderSize = 1.0f;
     style.ChildBorderSize = 1.0f;
@@ -225,96 +210,137 @@ static void ApplyTheme_CompactDark()
     style.PopupBorderSize = 1.0f;
     style.TabBorderSize = 1.0f;
 
-    style.WindowPadding = ImVec2(10.0f, 9.0f);
-    style.FramePadding = ImVec2(7.0f, 4.0f);
-    style.ItemSpacing = ImVec2(8.0f, 6.0f);
-    style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
-    style.CellPadding = ImVec2(6.0f, 5.0f);
-    style.ScrollbarSize = 10.0f;
-    style.GrabMinSize = 10.0f;
-    style.IndentSpacing = 14.0f;
+    style.WindowPadding = ImVec2(14.0f, 12.0f);
+    style.FramePadding = ImVec2(10.0f, 7.0f);
+    style.ItemSpacing = ImVec2(8.0f, 9.0f);
+    style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
+    style.CellPadding = ImVec2(8.0f, 6.0f);
+    style.ScrollbarSize = 8.0f;
+    style.ScrollbarPadding = 2.0f;
+    style.GrabMinSize = 12.0f;
+    style.IndentSpacing = 18.0f;
+    style.ColumnsMinSpacing = 10.0f;
+    style.TabBarBorderSize = 1.0f;
+    style.TabBarOverlineSize = 2.0f;
+    style.SeparatorSize = 1.0f;
+    style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+    style.SelectableTextAlign = ImVec2(0.0f, 0.5f);
+    style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
 
     ImVec4* c = style.Colors;
 
-    const ImVec4 bg0 = RGBA(9, 10, 12, 250);
-    const ImVec4 bg1 = RGBA(15, 17, 21, 250);
-    const ImVec4 bg2 = RGBA(23, 26, 31, 246);
-    const ImVec4 bg3 = RGBA(31, 35, 41, 248);
-    const ImVec4 stroke = RGBA(76, 89, 101, 132);
-    const ImVec4 strokeHi = RGBA(62, 185, 166, 180);
-    const ImVec4 accent = RGBA(48, 190, 171, 235);
-    const ImVec4 accentHi = RGBA(77, 215, 194, 255);
-    const ImVec4 accentSoft = RGBA(34, 130, 126, 108);
+    const ImVec4 surfaceBase = RGBA(32, 32, 32, 248);
+    const ImVec4 surfaceRaised = RGBA(39, 39, 39, 250);
+    const ImVec4 control = RGBA(45, 45, 45, 255);
+    const ImVec4 controlHover = RGBA(55, 55, 55, 255);
+    const ImVec4 controlActive = RGBA(65, 65, 65, 255);
+    const ImVec4 stroke = RGBA(82, 82, 82, 150);
+    const ImVec4 strokeHi = RGBA(112, 112, 112, 190);
+    const ImVec4 accent = RGBA(96, 205, 255, 245);
+    const ImVec4 accentActive = RGBA(0, 120, 212, 255);
+    const ImVec4 accentSoft = RGBA(0, 120, 212, 92);
 
-    const ImVec4 text = RGBA(231, 236, 242, 255);
-    const ImVec4 textDim = RGBA(148, 160, 174, 255);
+    const ImVec4 text = RGBA(245, 245, 245, 255);
+    const ImVec4 textDim = RGBA(188, 188, 188, 255);
 
     c[ImGuiCol_Text] = text;
     c[ImGuiCol_TextDisabled] = textDim;
 
     c[ImGuiCol_WindowBg] = RGBA(0, 0, 0, 0);
     c[ImGuiCol_ChildBg] = RGBA(0, 0, 0, 0);
-    c[ImGuiCol_PopupBg] = bg1;
+    c[ImGuiCol_PopupBg] = RGBA(38, 39, 43, 255);
 
     c[ImGuiCol_Border] = stroke;
     c[ImGuiCol_BorderShadow] = RGBA(0, 0, 0, 0);
 
-    c[ImGuiCol_FrameBg] = bg2;
-    c[ImGuiCol_FrameBgHovered] = bg3;
-    c[ImGuiCol_FrameBgActive] = RGBA(38, 44, 51, 252);
+    c[ImGuiCol_FrameBg] = control;
+    c[ImGuiCol_FrameBgHovered] = controlHover;
+    c[ImGuiCol_FrameBgActive] = controlActive;
 
-    c[ImGuiCol_TitleBg] = bg1;
-    c[ImGuiCol_TitleBgActive] = bg1;
-    c[ImGuiCol_TitleBgCollapsed] = bg1;
-    c[ImGuiCol_MenuBarBg] = bg0;
+    c[ImGuiCol_TitleBg] = surfaceRaised;
+    c[ImGuiCol_TitleBgActive] = surfaceRaised;
+    c[ImGuiCol_TitleBgCollapsed] = surfaceBase;
+    c[ImGuiCol_MenuBarBg] = surfaceRaised;
 
-    c[ImGuiCol_ScrollbarBg] = RGBA(7, 8, 10, 120);
-    c[ImGuiCol_ScrollbarGrab] = RGBA(79, 91, 104, 178);
-    c[ImGuiCol_ScrollbarGrabHovered] = RGBA(95, 109, 122, 220);
+    c[ImGuiCol_ScrollbarBg] = RGBA(0, 0, 0, 0);
+    c[ImGuiCol_ScrollbarGrab] = RGBA(112, 112, 112, 100);
+    c[ImGuiCol_ScrollbarGrabHovered] = RGBA(132, 132, 132, 155);
     c[ImGuiCol_ScrollbarGrabActive] = accent;
 
-    c[ImGuiCol_CheckMark] = accentHi;
+    c[ImGuiCol_CheckMark] = RGBA(255, 255, 255, 255);
+    c[ImGuiCol_CheckboxSelectedBg] = accentActive;
     c[ImGuiCol_SliderGrab] = accent;
-    c[ImGuiCol_SliderGrabActive] = accentHi;
+    c[ImGuiCol_SliderGrabActive] = RGBA(122, 214, 255, 255);
 
-    c[ImGuiCol_Button] = RGBA(22, 26, 31, 246);
-    c[ImGuiCol_ButtonHovered] = RGBA(31, 38, 44, 250);
-    c[ImGuiCol_ButtonActive] = RGBA(40, 53, 58, 252);
+    c[ImGuiCol_Button] = control;
+    c[ImGuiCol_ButtonHovered] = controlHover;
+    c[ImGuiCol_ButtonActive] = controlActive;
 
-    c[ImGuiCol_Header] = RGBA(21, 25, 30, 244);
-    c[ImGuiCol_HeaderHovered] = RGBA(29, 36, 42, 250);
+    c[ImGuiCol_Header] = RGBA(38, 39, 43, 230);
+    c[ImGuiCol_HeaderHovered] = RGBA(43, 45, 50, 238);
     c[ImGuiCol_HeaderActive] = accentSoft;
 
     c[ImGuiCol_Separator] = stroke;
     c[ImGuiCol_SeparatorHovered] = strokeHi;
-    c[ImGuiCol_SeparatorActive] = accentHi;
+    c[ImGuiCol_SeparatorActive] = accent;
 
-    c[ImGuiCol_Tab] = RGBA(20, 24, 29, 248);
-    c[ImGuiCol_TabHovered] = RGBA(30, 41, 47, 250);
-    c[ImGuiCol_TabActive] = RGBA(38, 52, 58, 252);
-    c[ImGuiCol_TabUnfocused] = RGBA(15, 18, 22, 240);
-    c[ImGuiCol_TabUnfocusedActive] = RGBA(25, 32, 38, 248);
+    c[ImGuiCol_Tab] = RGBA(43, 43, 43, 245);
+    c[ImGuiCol_TabHovered] = RGBA(55, 55, 55, 255);
+    c[ImGuiCol_TabSelected] = RGBA(62, 62, 62, 255);
+    c[ImGuiCol_TabSelectedOverline] = accent;
+    c[ImGuiCol_TabDimmed] = RGBA(36, 36, 36, 235);
+    c[ImGuiCol_TabDimmedSelected] = RGBA(50, 50, 50, 245);
+    c[ImGuiCol_TabDimmedSelectedOverline] = RGBA(96, 205, 255, 170);
 
     c[ImGuiCol_ResizeGrip] = RGBA(0, 0, 0, 0);
     c[ImGuiCol_ResizeGripHovered] = RGBA(0, 0, 0, 0);
     c[ImGuiCol_ResizeGripActive] = RGBA(0, 0, 0, 0);
 
-    c[ImGuiCol_PlotLines] = RGBA(96, 205, 185, 255);
-    c[ImGuiCol_PlotHistogram] = RGBA(228, 178, 91, 255);
+    c[ImGuiCol_InputTextCursor] = accent;
+    c[ImGuiCol_PlotLines] = accent;
+    c[ImGuiCol_PlotLinesHovered] = RGBA(122, 214, 255, 255);
+    c[ImGuiCol_PlotHistogram] = RGBA(252, 225, 115, 255);
+    c[ImGuiCol_PlotHistogramHovered] = RGBA(255, 235, 150, 255);
 
-    c[ImGuiCol_TableHeaderBg] = bg1;
+    c[ImGuiCol_TableHeaderBg] = surfaceRaised;
     c[ImGuiCol_TableBorderStrong] = stroke;
-    c[ImGuiCol_TableBorderLight] = RGBA(0, 0, 0, 0);
+    c[ImGuiCol_TableBorderLight] = RGBA(70, 70, 70, 115);
     c[ImGuiCol_TableRowBg] = RGBA(0, 0, 0, 0);
-    c[ImGuiCol_TableRowBgAlt] = RGBA(255, 255, 255, 8);
+    c[ImGuiCol_TableRowBgAlt] = RGBA(255, 255, 255, 10);
 
     c[ImGuiCol_NavCursor] = accent;
     c[ImGuiCol_NavWindowingHighlight] = accentSoft;
-    c[ImGuiCol_NavWindowingDimBg] = RGBA(0, 0, 0, 110);
+    c[ImGuiCol_NavWindowingDimBg] = RGBA(0, 0, 0, 120);
 
-    c[ImGuiCol_TextSelectedBg] = RGBA(48, 190, 171, 72);
-    c[ImGuiCol_DragDropTarget] = RGBA(48, 190, 171, 188);
+    c[ImGuiCol_TextLink] = accent;
+    c[ImGuiCol_TextSelectedBg] = RGBA(0, 120, 212, 120);
+    c[ImGuiCol_TreeLines] = RGBA(100, 100, 100, 115);
+    c[ImGuiCol_DragDropTarget] = accent;
+    c[ImGuiCol_DragDropTargetBg] = RGBA(0, 120, 212, 70);
+    c[ImGuiCol_UnsavedMarker] = RGBA(252, 225, 115, 255);
+    c[ImGuiCol_ModalWindowDimBg] = RGBA(0, 0, 0, 140);
 }
+
+enum class SidebarIconKind
+{
+    Camera,
+    Chip,
+    Layers,
+    Crosshair,
+    Move,
+    Curve,
+    Spark,
+    User,
+    Mouse,
+    Keyboard,
+    Sliders,
+    Monitor,
+    Palette,
+    Image,
+    AimSim,
+    Bars,
+    Debug
+};
 
 struct OverlayTabItem
 {
@@ -322,50 +348,186 @@ struct OverlayTabItem
     const char* group;
     const char* description;
     void (*draw)();
+    SidebarIconKind icon;
 };
 
 static const OverlayTabItem kOverlayTabs[] = {
-    { "Capture",       "Vision",  "Frame source, monitor/window selection and preview.", draw_capture_settings },
-    { "AI Model",      "Vision",  "Model, backend and detector thresholds.",             draw_ai },
-    { "Depth",         "Vision",  "Depth inference, masks and depth debug overlay.",     draw_depth },
+    { "Capture",       "Vision",  "Frame source, monitor/window selection and preview.", draw_capture_settings,        SidebarIconKind::Camera },
+    { "AI Model",      "Vision",  "Model, backend and detector thresholds.",             draw_ai,                      SidebarIconKind::Chip },
+    { "Depth",         "Vision",  "Depth inference, masks and depth debug overlay.",     draw_depth,                   SidebarIconKind::Layers },
 
-    { "Target",        "Aim",     "Target selection and aim point offsets.",             draw_target },
-    { "Movement",      "Aim",     "FOV, speed, target correction and motion profile.",   draw_mouse_movement },
-    { "Prediction",    "Aim",     "Prediction points and Kalman filter tuning.",         draw_mouse_prediction },
-    { "Assist",        "Aim",     "Auto shoot, recoil compensation and assist toggles.", draw_mouse_assist },
-    { "Profiles",      "Aim",     "Per-game sensitivity and profile management.",        draw_mouse_profiles },
+    { "Target",        "Aim",     "Target selection and aim point offsets.",             draw_target,                  SidebarIconKind::Crosshair },
+    { "Movement",      "Aim",     "FOV, speed, target correction and motion profile.",   draw_mouse_movement,          SidebarIconKind::Move },
+    { "Prediction",    "Aim",     "Prediction points and Kalman filter tuning.",         draw_mouse_prediction,        SidebarIconKind::Curve },
+    { "Assist",        "Aim",     "Auto shoot, recoil compensation and assist toggles.", draw_mouse_assist,            SidebarIconKind::Spark },
+    { "Profiles",      "Aim",     "Per-game sensitivity and profile management.",        draw_mouse_profiles,          SidebarIconKind::User },
 
-    { "Input Device",  "Control", "Mouse backend, device connection and reconnect data.",draw_mouse_input },
-    { "Hotkeys",       "Control", "Bindings for aiming, shooting and runtime actions.",  draw_buttons },
-    { "Editor",        "Control", "Overlay editor appearance and privacy options.",      draw_overlay },
+    { "Input Device",  "Control", "Mouse backend, device connection and reconnect data.",draw_mouse_input,             SidebarIconKind::Mouse },
+    { "Hotkeys",       "Control", "Bindings for aiming, shooting and runtime actions.",  draw_buttons,                 SidebarIconKind::Keyboard },
+    { "Editor",        "Control", "Overlay editor appearance and privacy options.",      draw_overlay,                 SidebarIconKind::Sliders },
 
-    { "Game Render",   "Visuals", "In-game overlay lifetime, FPS and render toggles.",   draw_game_overlay_general },
-    { "Render Style",  "Visuals", "Boxes, capture frame and future point styling.",      draw_game_overlay_visuals },
-    { "Icon Overlay",  "Visuals", "Per-target icon image, size, anchor and class filter.",draw_game_overlay_icon },
-    { "Aim Sim",       "Visuals", "Aim simulation window and latency model controls.",   draw_aim_simulation_settings },
+    { "Game Render",   "Visuals", "In-game overlay lifetime, FPS and render toggles.",   draw_game_overlay_general,    SidebarIconKind::Monitor },
+    { "Render Style",  "Visuals", "Boxes, capture frame and future point styling.",      draw_game_overlay_visuals,    SidebarIconKind::Palette },
+    { "Icon Overlay",  "Visuals", "Per-target icon image, size, anchor and class filter.",draw_game_overlay_icon,      SidebarIconKind::Image },
+    { "Aim Sim",       "Visuals", "Aim simulation window and latency model controls.",   draw_aim_simulation_settings, SidebarIconKind::AimSim },
 
-    { "Stats",         "Monitor", "Performance, capture source and timing graphs.",      draw_stats },
-    { "Debug",         "Monitor", "Screenshots, data collection and diagnostics.",        draw_debug },
+    { "Stats",         "Monitor", "Performance, capture source and timing graphs.",      draw_stats,                   SidebarIconKind::Bars },
+    { "Debug",         "Monitor", "Screenshots, data collection and diagnostics.",        draw_debug,                   SidebarIconKind::Debug },
 };
 
 static void DrawMainPanelBackground(const ImVec2& pos, const ImVec2& size)
 {
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const ImVec2 max(pos.x + size.x, pos.y + size.y);
-    draw->AddRectFilled(pos, max, IM_COL32(9, 10, 12, 248), 6.0f);
-    draw->AddRectFilled(pos, ImVec2(max.x, pos.y + 2.0f), IM_COL32(48, 190, 171, 210), 6.0f, ImDrawFlags_RoundCornersTop);
-    draw->AddRect(pos, max, IM_COL32(76, 89, 101, 142), 6.0f, 1.0f);
+    draw->AddRectFilled(pos, max, IM_COL32(29, 30, 33, 252), 10.0f);
+    draw->AddRectFilledMultiColor(
+        ImVec2(pos.x + 1.0f, pos.y + 1.0f),
+        ImVec2(max.x - 1.0f, max.y - 1.0f),
+        IM_COL32(42, 45, 52, 80),
+        IM_COL32(32, 33, 36, 34),
+        IM_COL32(24, 25, 27, 60),
+        IM_COL32(35, 38, 45, 58));
+    draw->AddRect(pos, max, IM_COL32(92, 92, 92, 128), 10.0f, 0, 1.0f);
 }
 
-static bool DrawSidebarTabButton(const char* label, bool selected)
+static void DrawSidebarTitle()
+{
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+}
+
+static void DrawSidebarIcon(ImDrawList* draw, SidebarIconKind icon, const char* group, const ImVec2& pos, bool selected)
+{
+    const ImU32 color = selected ? IM_COL32(96, 205, 255, 255) :
+        (std::strcmp(group, "Vision") == 0 ? IM_COL32(84, 182, 255, 230) :
+         std::strcmp(group, "Aim") == 0 ? IM_COL32(255, 189, 92, 230) :
+         std::strcmp(group, "Control") == 0 ? IM_COL32(71, 214, 190, 230) :
+         std::strcmp(group, "Visuals") == 0 ? IM_COL32(178, 143, 255, 230) :
+         IM_COL32(205, 213, 224, 230));
+
+    const float x = pos.x;
+    const float y = pos.y;
+    const float s = 18.0f;
+    const ImVec2 c(x + s * 0.5f, y + s * 0.5f);
+    const float stroke = 1.8f;
+    const ImU32 soft = (color & IM_COL32_A_MASK) ? (color & 0x88FFFFFFu) : color;
+
+    switch (icon)
+    {
+    case SidebarIconKind::Camera:
+        draw->AddRect(ImVec2(x + 3.0f, y + 5.5f), ImVec2(x + 15.0f, y + 13.5f), color, 2.5f, 0, stroke);
+        draw->AddRectFilled(ImVec2(x + 6.0f, y + 3.8f), ImVec2(x + 10.0f, y + 5.8f), color, 1.0f);
+        draw->AddCircle(ImVec2(c.x + 1.0f, c.y + 0.5f), 2.4f, color, 20, stroke);
+        break;
+    case SidebarIconKind::Chip:
+        draw->AddRect(ImVec2(x + 4.5f, y + 4.5f), ImVec2(x + 13.5f, y + 13.5f), color, 2.0f, 0, stroke);
+        draw->AddCircleFilled(c, 2.0f, soft, 16);
+        for (int i = 0; i < 3; ++i)
+        {
+            const float p = y + 5.5f + i * 3.5f;
+            draw->AddLine(ImVec2(x + 2.0f, p), ImVec2(x + 4.5f, p), color, stroke);
+            draw->AddLine(ImVec2(x + 13.5f, p), ImVec2(x + 16.0f, p), color, stroke);
+        }
+        break;
+    case SidebarIconKind::Layers:
+    {
+        const ImVec2 points[] = { ImVec2(c.x, y + 3.0f), ImVec2(x + 15.0f, y + 7.0f), ImVec2(c.x, y + 11.0f), ImVec2(x + 3.0f, y + 7.0f) };
+        draw->AddPolyline(points, 4, color, ImDrawFlags_Closed, stroke);
+        draw->AddLine(ImVec2(x + 4.0f, y + 11.5f), ImVec2(c.x, y + 15.0f), color, stroke);
+        draw->AddLine(ImVec2(x + 14.0f, y + 11.5f), ImVec2(c.x, y + 15.0f), color, stroke);
+        break;
+    }
+    case SidebarIconKind::Crosshair:
+        draw->AddCircle(c, 5.8f, color, 28, stroke);
+        draw->AddLine(ImVec2(c.x - 8.0f, c.y), ImVec2(c.x - 4.0f, c.y), color, stroke);
+        draw->AddLine(ImVec2(c.x + 4.0f, c.y), ImVec2(c.x + 8.0f, c.y), color, stroke);
+        draw->AddLine(ImVec2(c.x, c.y - 8.0f), ImVec2(c.x, c.y - 4.0f), color, stroke);
+        draw->AddLine(ImVec2(c.x, c.y + 4.0f), ImVec2(c.x, c.y + 8.0f), color, stroke);
+        break;
+    case SidebarIconKind::Move:
+        draw->AddLine(ImVec2(c.x, y + 3.0f), ImVec2(c.x, y + 15.0f), color, stroke);
+        draw->AddLine(ImVec2(x + 3.0f, c.y), ImVec2(x + 15.0f, c.y), color, stroke);
+        draw->AddTriangleFilled(ImVec2(c.x, y + 2.0f), ImVec2(c.x - 2.5f, y + 5.0f), ImVec2(c.x + 2.5f, y + 5.0f), color);
+        draw->AddTriangleFilled(ImVec2(c.x, y + 16.0f), ImVec2(c.x - 2.5f, y + 13.0f), ImVec2(c.x + 2.5f, y + 13.0f), color);
+        break;
+    case SidebarIconKind::Curve:
+        draw->AddBezierCubic(ImVec2(x + 3.0f, y + 13.5f), ImVec2(x + 6.5f, y + 5.0f), ImVec2(x + 11.5f, y + 14.0f), ImVec2(x + 15.0f, y + 4.0f), color, stroke, 18);
+        draw->AddCircleFilled(ImVec2(x + 15.0f, y + 4.0f), 2.0f, color, 12);
+        break;
+    case SidebarIconKind::Spark:
+        draw->AddLine(ImVec2(c.x, y + 3.0f), ImVec2(c.x, y + 15.0f), color, stroke);
+        draw->AddLine(ImVec2(x + 3.0f, c.y), ImVec2(x + 15.0f, c.y), color, stroke);
+        draw->AddLine(ImVec2(x + 5.0f, y + 5.0f), ImVec2(x + 13.0f, y + 13.0f), color, stroke);
+        draw->AddLine(ImVec2(x + 13.0f, y + 5.0f), ImVec2(x + 5.0f, y + 13.0f), color, stroke);
+        break;
+    case SidebarIconKind::User:
+        draw->AddCircle(ImVec2(c.x, y + 6.0f), 3.0f, color, 18, stroke);
+        draw->AddBezierCubic(ImVec2(x + 4.0f, y + 15.0f), ImVec2(x + 5.0f, y + 10.5f), ImVec2(x + 13.0f, y + 10.5f), ImVec2(x + 14.0f, y + 15.0f), color, stroke, 14);
+        break;
+    case SidebarIconKind::Mouse:
+        draw->AddRect(ImVec2(x + 5.0f, y + 2.5f), ImVec2(x + 13.0f, y + 15.5f), color, 4.0f, 0, stroke);
+        draw->AddLine(ImVec2(c.x, y + 3.0f), ImVec2(c.x, y + 7.0f), color, stroke);
+        break;
+    case SidebarIconKind::Keyboard:
+        draw->AddRect(ImVec2(x + 2.5f, y + 5.0f), ImVec2(x + 15.5f, y + 13.0f), color, 2.0f, 0, stroke);
+        for (int i = 0; i < 3; ++i)
+            draw->AddCircleFilled(ImVec2(x + 5.0f + i * 4.0f, y + 8.0f), 0.9f, color, 8);
+        draw->AddLine(ImVec2(x + 5.0f, y + 11.0f), ImVec2(x + 13.0f, y + 11.0f), color, stroke);
+        break;
+    case SidebarIconKind::Sliders:
+        for (int i = 0; i < 3; ++i)
+        {
+            const float yy = y + 5.0f + i * 4.0f;
+            draw->AddLine(ImVec2(x + 3.0f, yy), ImVec2(x + 15.0f, yy), color, stroke);
+            draw->AddCircleFilled(ImVec2(x + 6.0f + i * 3.0f, yy), 1.8f, color, 14);
+        }
+        break;
+    case SidebarIconKind::Monitor:
+        draw->AddRect(ImVec2(x + 3.0f, y + 4.0f), ImVec2(x + 15.0f, y + 12.0f), color, 2.0f, 0, stroke);
+        draw->AddLine(ImVec2(c.x, y + 12.0f), ImVec2(c.x, y + 15.0f), color, stroke);
+        draw->AddLine(ImVec2(x + 6.0f, y + 15.0f), ImVec2(x + 12.0f, y + 15.0f), color, stroke);
+        break;
+    case SidebarIconKind::Palette:
+        draw->AddCircle(c, 6.5f, color, 24, stroke);
+        draw->AddCircleFilled(ImVec2(x + 6.0f, y + 7.0f), 1.1f, color, 8);
+        draw->AddCircleFilled(ImVec2(x + 9.0f, y + 5.5f), 1.1f, color, 8);
+        draw->AddCircleFilled(ImVec2(x + 12.0f, y + 8.0f), 1.1f, color, 8);
+        break;
+    case SidebarIconKind::Image:
+    {
+        draw->AddRect(ImVec2(x + 3.0f, y + 4.0f), ImVec2(x + 15.0f, y + 14.0f), color, 2.0f, 0, stroke);
+        draw->AddCircleFilled(ImVec2(x + 6.0f, y + 7.0f), 1.3f, color, 10);
+        const ImVec2 points[] = { ImVec2(x + 4.0f, y + 13.0f), ImVec2(x + 8.0f, y + 9.0f), ImVec2(x + 11.0f, y + 12.0f), ImVec2(x + 14.0f, y + 9.0f) };
+        draw->AddPolyline(points, 4, color, 0, stroke);
+        break;
+    }
+    case SidebarIconKind::AimSim:
+        draw->AddCircle(ImVec2(x + 5.0f, y + 13.0f), 2.2f, color, 14, stroke);
+        draw->AddCircle(ImVec2(x + 13.0f, y + 5.0f), 2.2f, color, 14, stroke);
+        draw->AddLine(ImVec2(x + 6.8f, y + 11.2f), ImVec2(x + 11.2f, y + 6.8f), color, stroke);
+        draw->AddTriangleFilled(ImVec2(x + 14.0f, y + 4.0f), ImVec2(x + 11.0f, y + 4.5f), ImVec2(x + 13.5f, y + 7.0f), color);
+        break;
+    case SidebarIconKind::Bars:
+        draw->AddRectFilled(ImVec2(x + 4.0f, y + 10.0f), ImVec2(x + 6.5f, y + 15.0f), color, 1.0f);
+        draw->AddRectFilled(ImVec2(x + 8.0f, y + 6.5f), ImVec2(x + 10.5f, y + 15.0f), color, 1.0f);
+        draw->AddRectFilled(ImVec2(x + 12.0f, y + 3.5f), ImVec2(x + 14.5f, y + 15.0f), color, 1.0f);
+        break;
+    case SidebarIconKind::Debug:
+        draw->AddRect(ImVec2(x + 5.0f, y + 5.0f), ImVec2(x + 13.0f, y + 13.5f), color, 3.0f, 0, stroke);
+        draw->AddLine(ImVec2(x + 3.0f, y + 8.0f), ImVec2(x + 15.0f, y + 8.0f), color, stroke);
+        draw->AddLine(ImVec2(x + 3.0f, y + 11.5f), ImVec2(x + 15.0f, y + 11.5f), color, stroke);
+        break;
+    }
+}
+
+static bool DrawSidebarTabButton(const OverlayTabItem& tab, bool selected)
 {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const ImGuiStyle& style = ImGui::GetStyle();
-    ImVec2 size = ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetFrameHeight() + style.ItemSpacing.y * 0.45f);
+    ImVec2 size = ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetFrameHeight() + style.ItemSpacing.y * 0.22f);
     if (size.x < 1.0f)
         size.x = 1.0f;
 
-    const std::string id = std::string("##nav_") + label;
+    const std::string id = std::string("##nav_") + tab.label;
     const bool pressed = ImGui::InvisibleButton(id.c_str(), size);
     const bool hovered = ImGui::IsItemHovered();
 
@@ -374,21 +536,24 @@ static bool DrawSidebarTabButton(const char* label, bool selected)
 
     ImU32 rowBg = IM_COL32(0, 0, 0, 0);
     if (selected)
-        rowBg = IM_COL32(24, 41, 45, 230);
+        rowBg = IM_COL32(54, 55, 60, 230);
     else if (hovered)
-        rowBg = IM_COL32(25, 29, 34, 224);
+        rowBg = IM_COL32(43, 44, 49, 212);
 
     if (selected || hovered)
-        draw->AddRectFilled(pos, max, rowBg, 4.0f);
+        draw->AddRectFilled(pos, max, rowBg, 5.0f);
     if (selected)
     {
-        draw->AddRectFilled(pos, ImVec2(pos.x + 3.0f, max.y), IM_COL32(48, 190, 171, 255), 4.0f, ImDrawFlags_RoundCornersLeft);
-        draw->AddRect(pos, max, IM_COL32(68, 205, 186, 150), 4.0f, 1.0f);
+        const float markerY0 = pos.y + 7.0f;
+        const float markerY1 = max.y - 7.0f;
+        draw->AddRectFilled(ImVec2(pos.x + 3.0f, markerY0), ImVec2(pos.x + 6.0f, markerY1), IM_COL32(96, 205, 255, 255), 3.0f);
+        draw->AddRect(pos, max, IM_COL32(255, 255, 255, 18), 5.0f, 0, 1.0f);
     }
 
     const float textY = pos.y + (size.y - ImGui::GetTextLineHeight()) * 0.5f;
-    const ImU32 textCol = selected ? IM_COL32(245, 248, 250, 255) : (hovered ? IM_COL32(226, 232, 238, 255) : IM_COL32(185, 196, 207, 240));
-    draw->AddText(ImVec2(pos.x + style.FramePadding.x + 8.0f, textY), textCol, label);
+    const ImU32 textCol = selected ? IM_COL32(255, 255, 255, 255) : (hovered ? IM_COL32(238, 238, 238, 255) : IM_COL32(202, 202, 202, 240));
+    DrawSidebarIcon(draw, tab.icon, tab.group, ImVec2(pos.x + style.FramePadding.x + 4.0f, pos.y + (size.y - 18.0f) * 0.5f), selected);
+    draw->AddText(ImVec2(pos.x + style.FramePadding.x + 31.0f, textY), textCol, tab.label);
 
     return pressed;
 }
@@ -921,7 +1086,9 @@ void SetupImGui()
     fontConfig.OversampleH = 3;
     fontConfig.OversampleV = 2;
     fontConfig.PixelSnapH = true;
-    if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 14.0f, &fontConfig))
+    if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\seguisb.ttf", 16.5f, &fontConfig) &&
+        !io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\SegUIVar.ttf", 16.5f, &fontConfig) &&
+        !io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.5f, &fontConfig))
     {
         io.Fonts->AddFontDefault();
     }
@@ -932,7 +1099,7 @@ void SetupImGui()
     ImGui_ImplWin32_Init(g_hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-    ApplyTheme_CompactDark();
+    ApplyTheme_Windows11Dark();
     g_baseStyle = ImGui::GetStyle();
     g_baseStyleReady = true;
     g_runtimeUiScale = -1.0f;
@@ -1036,7 +1203,7 @@ static HRESULT RenderOverlayFrame(bool allowAutoResize, bool allowConfigSave)
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    const float sidebarWidth = std::clamp(w * 0.27f, 150.0f, 220.0f);
+    const float sidebarWidth = std::clamp(w * 0.27f, 216.0f, 224.0f);
 
     ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(w, h), ImGuiCond_Always);
@@ -1060,12 +1227,14 @@ static HRESULT RenderOverlayFrame(bool allowAutoResize, bool allowConfigSave)
         if (g_activeOverlayTab < 0 || g_activeOverlayTab >= tabCount)
             g_activeOverlayTab = 0;
 
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(13, 15, 18, 246));
-        ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(76, 89, 101, 132));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
         ImGui::BeginChild("##options_nav", ImVec2(sidebarWidth, 0.0f),
-            ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
-            ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            ImGuiChildFlags_AlwaysUseWindowPadding,
+            ImGuiWindowFlags_NoScrollbar);
+
+        DrawSidebarTitle();
 
         const char* lastGroup = nullptr;
         for (int i = 0; i < tabCount; ++i)
@@ -1074,12 +1243,12 @@ static HRESULT RenderOverlayFrame(bool allowAutoResize, bool allowConfigSave)
             if (!lastGroup || std::strcmp(lastGroup, group) != 0)
             {
                 if (lastGroup)
-                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(105, 207, 190, 230));
+                    ImGui::Dummy(ImVec2(0.0f, 5.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(177, 177, 177, 230));
                 ImGui::TextUnformatted(group);
                 ImGui::PopStyleColor();
             }
-            if (DrawSidebarTabButton(kOverlayTabs[i].label, g_activeOverlayTab == i))
+            if (DrawSidebarTabButton(kOverlayTabs[i], g_activeOverlayTab == i))
                 g_activeOverlayTab = i;
             lastGroup = group;
         }
@@ -1087,23 +1256,15 @@ static HRESULT RenderOverlayFrame(bool allowAutoResize, bool allowConfigSave)
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar();
 
-        ImGui::SameLine(0.0f, 8.0f);
+        ImGui::SameLine(0.0f, 12.0f);
 
         float contentExtraW = 0.0f;
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(14, 17, 20, 246));
-        ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(76, 89, 101, 132));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
         ImGui::BeginChild("##options_content", ImVec2(0.0f, 0.0f),
-            ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
+            ImGuiChildFlags_AlwaysUseWindowPadding,
             ImGuiWindowFlags_AlwaysVerticalScrollbar);
-
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(245, 248, 250, 255));
-        ImGui::TextUnformatted(kOverlayTabs[g_activeOverlayTab].label);
-        ImGui::PopStyleColor();
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(148, 160, 174, 255));
-        ImGui::TextWrapped("%s", kOverlayTabs[g_activeOverlayTab].description);
-        ImGui::PopStyleColor();
-        ImGui::Separator();
 
         kOverlayTabs[g_activeOverlayTab].draw();
 

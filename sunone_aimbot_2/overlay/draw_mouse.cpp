@@ -929,13 +929,6 @@ static void draw_mouse_page(MouseSettingsPage page)
         OverlayUI::EndSection();
     }
 
-    if (shouldDrawMousePage(page, MouseSettingsPage::Input) &&
-        OverlayUI::BeginSection("Warning", "mouse_section_warning"))
-    {
-        ImGui::TextColored(ImVec4(255, 255, 255, 100), "Do not test shooting and aiming with the overlay is open.");
-        OverlayUI::EndSection();
-    }
-
     if (prev_fovX != config.fovX ||
         prev_fovY != config.fovY ||
         prev_minSpeedMultiplier != config.minSpeedMultiplier ||

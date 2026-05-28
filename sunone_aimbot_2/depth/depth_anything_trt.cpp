@@ -73,6 +73,29 @@ namespace depth_anything
             return false;
         }
 
+        bool HasExtensionCaseInsensitive(const std::filesystem::path& path, const char* ext)
+        {
+            if (!ext || !*ext)
+            {
+                return false;
+            }
+
+            std::string current = path.extension().string();
+            std::string expected = ext;
+            std::transform(current.begin(), current.end(), current.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::transform(expected.begin(), expected.end(), expected.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return current == expected;
+        }
+
+        std::string MakeEnginePathFromOnnx(const std::string& onnxPath)
+        {
+            std::filesystem::path enginePath(onnxPath);
+            enginePath.replace_extension(".engine");
+            return enginePath.string();
+        }
+
         bool ResolveDepthModelPath(const std::string& modelPath, std::string& resolvedPath, std::string& error)
         {
             if (modelPath.empty())
@@ -84,11 +107,11 @@ namespace depth_anything
             std::filesystem::path requested(modelPath);
             if (ContainsParentTraversal(requested))
             {
-                error = "Depth model path must stay inside models/depth.";
+                error = "Depth model path must stay inside depth_models.";
                 return false;
             }
 
-            const std::filesystem::path base = (std::filesystem::path("models") / "depth").lexically_normal();
+            const std::filesystem::path base = std::filesystem::path("depth_models").lexically_normal();
             std::filesystem::path resolved = requested;
             if (!requested.is_absolute() && !requested.has_root_name() && !requested.has_root_directory())
             {
@@ -113,7 +136,7 @@ namespace depth_anything
             }
             if (!PathStartsWith(resolvedAbs, baseAbs))
             {
-                error = "Depth model path must stay inside models/depth.";
+                error = "Depth model path must stay inside depth_models.";
                 return false;
             }
 
@@ -409,6 +432,40 @@ namespace depth_anything
         return true;
     }
 
+    bool DepthAnythingTrt::exportEngine(const std::string& modelPath, nvinfer1::ILogger& logger, std::string* enginePath)
+    {
+        reset();
+
+        std::string resolvedPath;
+        if (!ResolveDepthModelPath(modelPath, resolvedPath, last_error))
+        {
+            return false;
+        }
+
+        if (!HasExtensionCaseInsensitive(std::filesystem::path(resolvedPath), ".onnx"))
+        {
+            last_error = "Depth export expects an .onnx model path.";
+            return false;
+        }
+
+        if (!std::filesystem::exists(resolvedPath))
+        {
+            last_error = "Depth model file not found: " + resolvedPath;
+            return false;
+        }
+
+        if (!buildEngine(resolvedPath, logger))
+        {
+            if (last_error.empty())
+            {
+                last_error = "Failed to build depth engine from ONNX: " + resolvedPath;
+            }
+            return false;
+        }
+
+        return saveEngine(resolvedPath, enginePath);
+    }
+
     bool DepthAnythingTrt::preprocess(const cv::Mat& image, std::vector<float>& input_tensor)
     {
         if (image.empty())
@@ -602,13 +659,16 @@ namespace depth_anything
 
     bool DepthAnythingTrt::loadEngine(const std::string& modelPath, nvinfer1::ILogger& logger)
     {
-        if (modelPath.find(".onnx") != std::string::npos)
+        if (HasExtensionCaseInsensitive(std::filesystem::path(modelPath), ".onnx"))
         {
             if (!buildEngine(modelPath, logger))
             {
                 return false;
             }
-            saveEngine(modelPath);
+            if (!saveEngine(modelPath))
+            {
+                return false;
+            }
             return true;
         }
 
@@ -759,7 +819,9 @@ namespace depth_anything
         nvinfer1::IHostMemory* plan = builder->buildSerializedNetwork(*network, *config);
         if (!plan)
         {
-            last_error = "Failed to build depth engine from ONNX.";
+            last_error = gTrtExportCancelRequested.load()
+                ? "Depth export canceled."
+                : "Failed to build depth engine from ONNX.";
             delete parser;
             delete config;
             delete network;
@@ -806,35 +868,51 @@ namespace depth_anything
         return true;
     }
 
-    bool DepthAnythingTrt::saveEngine(const std::string& onnxPath)
+    bool DepthAnythingTrt::saveEngine(const std::string& onnxPath, std::string* enginePath)
     {
         if (!engine)
         {
+            last_error = "Depth engine is not available for serialization.";
             return false;
         }
 
-        size_t dotIndex = onnxPath.find_last_of(".");
-        if (dotIndex == std::string::npos)
+        std::string engine_path = MakeEnginePathFromOnnx(onnxPath);
+        if (engine_path.empty() || engine_path == onnxPath)
         {
+            last_error = "Failed to resolve depth engine output path.";
             return false;
         }
 
-        std::string engine_path = onnxPath.substr(0, dotIndex) + ".engine";
         nvinfer1::IHostMemory* data = engine->serialize();
         if (!data)
         {
+            last_error = "Failed to serialize depth engine.";
             return false;
         }
         std::ofstream file(engine_path, std::ios::binary | std::ios::out);
         if (!file.is_open())
         {
+            last_error = "Unable to write depth engine: " + engine_path;
             delete data;
             return false;
         }
 
         file.write(reinterpret_cast<const char*>(data->data()), data->size());
+        if (!file.good())
+        {
+            last_error = "Failed to write depth engine: " + engine_path;
+            file.close();
+            delete data;
+            return false;
+        }
         file.close();
         delete data;
+
+        if (enginePath)
+        {
+            *enginePath = engine_path;
+        }
+        last_error.clear();
         return true;
     }
 

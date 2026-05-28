@@ -36,11 +36,6 @@ void ensureVirtualCamerasLoaded()
     }
 }
 
-static float CaptureCompactComboWidth()
-{
-    return OverlayUI::AdaptiveItemWidth(0.66f);
-}
-
 void draw_capture_settings()
 {
     static const int allowed_resolutions[] = { 160, 320, 640 };
@@ -52,63 +47,64 @@ void draw_capture_settings()
 
     if (OverlayUI::BeginSection("General Capture", "capture_section_general"))
     {
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Detection Resolution");
-        ImGui::SameLine(0.0f, 8.0f);
-        ImGui::SetNextItemWidth(CaptureCompactComboWidth());
-        if (ImGui::Combo("##capture_detection_resolution", &current_resolution_idx, "160\0""320\0""640\0"))
         {
-            config.detection_resolution = allowed_resolutions[current_resolution_idx];
-            detection_resolution_changed.store(true);
-            detector_model_changed.store(true);
+            const auto row = OverlayUI::BeginSettingRow("Detection Resolution");
+            if (ImGui::Combo("##value", &current_resolution_idx, "160\0""320\0""640\0"))
+            {
+                config.detection_resolution = allowed_resolutions[current_resolution_idx];
+                detection_resolution_changed.store(true);
+                detector_model_changed.store(true);
 
-            globalMouseThread->updateConfig(
-                config.detection_resolution,
-                config.fovX,
-                config.fovY,
-                config.minSpeedMultiplier,
-                config.maxSpeedMultiplier,
-                config.predictionInterval,
-                config.auto_shoot,
-                config.bScope_multiplier);
-            OverlayConfig_MarkDirty();
+                globalMouseThread->updateConfig(
+                    config.detection_resolution,
+                    config.fovX,
+                    config.fovY,
+                    config.minSpeedMultiplier,
+                    config.maxSpeedMultiplier,
+                    config.predictionInterval,
+                    config.auto_shoot,
+                    config.bScope_multiplier);
+                OverlayConfig_MarkDirty();
+            }
+            OverlayUI::EndSettingRow(row);
         }
 
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Capture FPS");
-        ImGui::SameLine(0.0f, 8.0f);
-        ImGui::SetNextItemWidth(CaptureCompactComboWidth());
-        if (ImGui::SliderInt("##capture_fps_slider", &config.capture_fps, 0, 240))
         {
-            capture_fps_changed.store(true);
-            OverlayConfig_MarkDirty();
+            const auto row = OverlayUI::BeginSettingRow("Capture FPS");
+            if (ImGui::SliderInt("##value", &config.capture_fps, 0, 240))
+            {
+                capture_fps_changed.store(true);
+                OverlayConfig_MarkDirty();
+            }
+            OverlayUI::EndSettingRow(row);
         }
 
         if (config.capture_fps == 0)
         {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(255, 0, 0, 255), "-> Disabled");
+            OverlayUI::TextRow("Capture FPS is disabled.", IM_COL32(255, 108, 108, 255));
+        }
+        else if (config.capture_fps >= 61)
+        {
+            OverlayUI::TextRow("WARNING: High FPS can reduce performance.");
         }
 
-        if (config.capture_fps == 0 || config.capture_fps >= 61)
         {
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 260.0f);
-            ImGui::TextColored(ImVec4(255, 255, 0, 255), "WARNING: High FPS can reduce performance.");
-            ImGui::PopTextWrapPos();
-        }
-
-        if (ImGui::Checkbox("Circle FOV", &config.circle_fov_enabled))
-        {
-            OverlayConfig_MarkDirty();
+            const auto row = OverlayUI::BeginSettingRow("Circle FOV");
+            if (ImGui::Checkbox("##value", &config.circle_fov_enabled))
+            {
+                OverlayConfig_MarkDirty();
+            }
+            OverlayUI::EndSettingRow(row);
         }
 
         if (config.circle_fov_enabled)
         {
-            ImGui::SetNextItemWidth(CaptureCompactComboWidth());
-            if (ImGui::SliderInt("Circle FOV size", &config.circle_fov_radius_percent, 1, 100, "%d%%"))
+            const auto row = OverlayUI::BeginSettingRow("Circle FOV size");
+            if (ImGui::SliderInt("##value", &config.circle_fov_radius_percent, 1, 100, "%d%%"))
             {
                 OverlayConfig_MarkDirty();
             }
+            OverlayUI::EndSettingRow(row);
         }
 
 #ifdef USE_CUDA
@@ -120,15 +116,19 @@ void draw_capture_settings()
                 ImGui::BeginDisabled();
             }
 
-            if (ImGui::Checkbox("Use CUDA Direct Capture", &config.capture_use_cuda))
             {
-                OverlayConfig_MarkDirty();
+                const auto row = OverlayUI::BeginSettingRow("Use CUDA Direct Capture");
+                if (ImGui::Checkbox("##value", &config.capture_use_cuda))
+                {
+                    OverlayConfig_MarkDirty();
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
             if (!cudaCaptureAvailable)
             {
                 ImGui::EndDisabled();
-                ImGui::TextDisabled("Available only with duplication_api.");
+                OverlayUI::TextRow("Available only with duplication_api.", IM_COL32(188, 188, 188, 255));
             }
         }
 #endif
@@ -151,15 +151,15 @@ void draw_capture_settings()
             }
         }
 
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Capture method");
-        ImGui::SameLine(0.0f, 8.0f);
-        ImGui::SetNextItemWidth(CaptureCompactComboWidth());
-        if (ImGui::Combo("##capture_method", &currentcaptureMethodIndex, captureMethodItems.data(), static_cast<int>(captureMethodItems.size())))
         {
-            config.capture_method = captureMethodOptions[currentcaptureMethodIndex];
-            OverlayConfig_MarkDirty();
-            capture_method_changed.store(true);
+            const auto row = OverlayUI::BeginSettingRow("Capture method");
+            if (ImGui::Combo("##value", &currentcaptureMethodIndex, captureMethodItems.data(), static_cast<int>(captureMethodItems.size())))
+            {
+                config.capture_method = captureMethodOptions[currentcaptureMethodIndex];
+                OverlayConfig_MarkDirty();
+                capture_method_changed.store(true);
+            }
+            OverlayUI::EndSettingRow(row);
         }
 
         OverlayUI::EndSection();
@@ -174,21 +174,21 @@ void draw_capture_settings()
             {
                 std::vector<std::string> targetOptions = { "monitor", "window" };
                 int currentTargetIndex = (config.capture_target == "window") ? 1 : 0;
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted("Capture target (WinRT)");
-                ImGui::SameLine(0.0f, 8.0f);
-                ImGui::SetNextItemWidth(CaptureCompactComboWidth());
-                if (ImGui::Combo("##capture_target_winrt", &currentTargetIndex,
-                    [](void* data, int idx) -> const char* {
-                        const auto* v = static_cast<const std::vector<std::string>*>(data);
-                        if (idx < 0 || idx >= (int)v->size()) return nullptr;
-                        return v->at(idx).c_str();
-                    }, (void*)&targetOptions, (int)targetOptions.size()))
                 {
-                    config.capture_target = targetOptions[currentTargetIndex];
-                    OverlayConfig_MarkDirty();
-                    capture_method_changed.store(true);
-                    capture_window_changed.store(true);
+                    const auto row = OverlayUI::BeginSettingRow("Capture target (WinRT)");
+                    if (ImGui::Combo("##value", &currentTargetIndex,
+                        [](void* data, int idx) -> const char* {
+                            const auto* v = static_cast<const std::vector<std::string>*>(data);
+                            if (idx < 0 || idx >= (int)v->size()) return nullptr;
+                            return v->at(idx).c_str();
+                        }, (void*)&targetOptions, (int)targetOptions.size()))
+                    {
+                        config.capture_target = targetOptions[currentTargetIndex];
+                        OverlayConfig_MarkDirty();
+                        capture_method_changed.store(true);
+                        capture_window_changed.store(true);
+                    }
+                    OverlayUI::EndSettingRow(row);
                 }
             }
 
@@ -208,27 +208,38 @@ void draw_capture_settings()
                     initTitle = true;
                 }
 
-                ImGui::InputText("Window title contains", titleBuf, IM_ARRAYSIZE(titleBuf));
-                ImGui::SameLine();
-                if (ImGui::Button("Use Active Window"))
                 {
-                    wchar_t wbuf[512]{};
-                    HWND fg = ::GetForegroundWindow();
-                    if (fg && ::GetWindowTextW(fg, wbuf, (int)std::size(wbuf)) > 0)
-                    {
-                        std::wstring ws(wbuf);
-                        std::string s = WideToUtf8(ws);
-                        memset(titleBuf, 0, sizeof(titleBuf));
-                        auto copy = s.substr(0, sizeof(titleBuf) - 1);
-                        memcpy(titleBuf, copy.c_str(), copy.size());
-                    }
+                    const auto row = OverlayUI::BeginSettingRow("Window title contains");
+                    ImGui::InputText("##value", titleBuf, IM_ARRAYSIZE(titleBuf));
+                    OverlayUI::EndSettingRow(row);
                 }
-                if (ImGui::Button("Apply Window Target"))
                 {
-                    config.capture_window_title = titleBuf;
-                    OverlayConfig_MarkDirty();
-                    capture_method_changed.store(true);
-                    capture_window_changed.store(true);
+                    const auto row = OverlayUI::BeginSettingRow("Window tools");
+                    if (ImGui::Button("Use Active Window", ImVec2(row.controlWidth, 0.0f)))
+                    {
+                        wchar_t wbuf[512]{};
+                        HWND fg = ::GetForegroundWindow();
+                        if (fg && ::GetWindowTextW(fg, wbuf, (int)std::size(wbuf)) > 0)
+                        {
+                            std::wstring ws(wbuf);
+                            std::string s = WideToUtf8(ws);
+                            memset(titleBuf, 0, sizeof(titleBuf));
+                            auto copy = s.substr(0, sizeof(titleBuf) - 1);
+                            memcpy(titleBuf, copy.c_str(), copy.size());
+                        }
+                    }
+                    OverlayUI::EndSettingRow(row);
+                }
+                {
+                    const auto row = OverlayUI::BeginSettingRow("Apply target");
+                    if (ImGui::Button("Apply Window Target", ImVec2(row.controlWidth, 0.0f)))
+                    {
+                        config.capture_window_title = titleBuf;
+                        OverlayConfig_MarkDirty();
+                        capture_method_changed.store(true);
+                        capture_window_changed.store(true);
+                    }
+                    OverlayUI::EndSettingRow(row);
                 }
             }
 
@@ -237,16 +248,24 @@ void draw_capture_settings()
                 ImGui::BeginDisabled();
             }
 
-            if (ImGui::Checkbox("Capture Borders", &config.capture_borders))
             {
-                capture_borders_changed.store(true);
-                OverlayConfig_MarkDirty();
+                const auto row = OverlayUI::BeginSettingRow("Capture Borders");
+                if (ImGui::Checkbox("##value", &config.capture_borders))
+                {
+                    capture_borders_changed.store(true);
+                    OverlayConfig_MarkDirty();
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
-            if (ImGui::Checkbox("Capture Cursor", &config.capture_cursor))
             {
-                capture_cursor_changed.store(true);
-                OverlayConfig_MarkDirty();
+                const auto row = OverlayUI::BeginSettingRow("Capture Cursor");
+                if (ImGui::Checkbox("##value", &config.capture_cursor))
+                {
+                    capture_cursor_changed.store(true);
+                    OverlayConfig_MarkDirty();
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
             if (disable_winrt_futures)
@@ -284,15 +303,15 @@ void draw_capture_settings()
             }
 
             int selectedMonitor = std::clamp(config.monitor_idx, 0, monitorCount - 1);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted("Capture monitor");
-            ImGui::SameLine(0.0f, 8.0f);
-            ImGui::SetNextItemWidth(CaptureCompactComboWidth());
-            if (ImGui::Combo("##capture_monitor", &selectedMonitor, monitorItems.data(), static_cast<int>(monitorItems.size())))
             {
-                config.monitor_idx = selectedMonitor;
-                OverlayConfig_MarkDirty();
-                capture_method_changed.store(true);
+                const auto row = OverlayUI::BeginSettingRow("Capture monitor");
+                if (ImGui::Combo("##value", &selectedMonitor, monitorItems.data(), static_cast<int>(monitorItems.size())))
+                {
+                    config.monitor_idx = selectedMonitor;
+                    OverlayConfig_MarkDirty();
+                    capture_method_changed.store(true);
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
             OverlayUI::EndSection();
@@ -304,11 +323,11 @@ void draw_capture_settings()
         if (OverlayUI::BeginSection("Virtual Camera", "capture_section_virtual_camera"))
         {
             ensureVirtualCamerasLoaded();
-            ImGui::Text("Select virtual camera:");
 
-            ImGui::Text("Filter:");
-            if (ImGui::InputText("##VCFilter", virtual_camera_filter_buf, IM_ARRAYSIZE(virtual_camera_filter_buf)))
             {
+                const auto row = OverlayUI::BeginSettingRow("Filter");
+                ImGui::InputText("##value", virtual_camera_filter_buf, IM_ARRAYSIZE(virtual_camera_filter_buf));
+                OverlayUI::EndSettingRow(row);
             }
 
             std::string filter_lower = virtual_camera_filter_buf;
@@ -344,37 +363,51 @@ void draw_capture_settings()
                     items.push_back(virtual_cameras[idx].c_str());
                 }
 
-                ImGui::SetNextItemWidth(CaptureCompactComboWidth());
-                if (ImGui::Combo("##virtual_camera_combo", &currentIndex, items.data(), static_cast<int>(items.size())))
                 {
-                    config.virtual_camera_name = virtual_cameras[filtered_indices[currentIndex]];
-                    OverlayConfig_MarkDirty();
-                    capture_method_changed.store(true);
+                    const auto row = OverlayUI::BeginSettingRow("Virtual camera");
+                    if (ImGui::Combo("##value", &currentIndex, items.data(), static_cast<int>(items.size())))
+                    {
+                        config.virtual_camera_name = virtual_cameras[filtered_indices[currentIndex]];
+                        OverlayConfig_MarkDirty();
+                        capture_method_changed.store(true);
+                    }
+                    OverlayUI::EndSettingRow(row);
                 }
             }
             else
             {
-                ImGui::TextDisabled("No matching virtual cameras");
+                OverlayUI::TextRow("No matching virtual cameras", IM_COL32(188, 188, 188, 255));
             }
 
-            ImGui::SameLine();
-            if (ImGui::Button("Refresh"))
             {
-                VirtualCameraCapture::ClearCachedCameraList();
-                virtual_cameras = VirtualCameraCapture::GetAvailableVirtualCameras(true);
-                virtual_camera_filter_buf[0] = '\0';
+                const auto row = OverlayUI::BeginSettingRow("Camera list");
+                if (ImGui::Button("Refresh", ImVec2(row.controlWidth, 0.0f)))
+                {
+                    VirtualCameraCapture::ClearCachedCameraList();
+                    virtual_cameras = VirtualCameraCapture::GetAvailableVirtualCameras(true);
+                    virtual_camera_filter_buf[0] = '\0';
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
-            if (ImGui::SliderInt("Virtual camera width", &config.virtual_camera_width, 128, 3840))
             {
-                OverlayConfig_MarkDirty();
-                capture_method_changed.store(true);
+                const auto row = OverlayUI::BeginSettingRow("Virtual camera width");
+                if (ImGui::SliderInt("##value", &config.virtual_camera_width, 128, 3840))
+                {
+                    OverlayConfig_MarkDirty();
+                    capture_method_changed.store(true);
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
-            if (ImGui::SliderInt("Virtual camera heigth", &config.virtual_camera_heigth, 128, 2160))
             {
-                OverlayConfig_MarkDirty();
-                capture_method_changed.store(true);
+                const auto row = OverlayUI::BeginSettingRow("Virtual camera height");
+                if (ImGui::SliderInt("##value", &config.virtual_camera_heigth, 128, 2160))
+                {
+                    OverlayConfig_MarkDirty();
+                    capture_method_changed.store(true);
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
             OverlayUI::EndSection();
@@ -396,15 +429,27 @@ void draw_capture_settings()
                 udp_settings_init = true;
             }
 
-            ImGui::InputText("UDP IP", udp_ip_buf, IM_ARRAYSIZE(udp_ip_buf));
-            ImGui::InputInt("UDP Port", &udp_port_buf);
-            if (ImGui::Button("Apply UDP Settings"))
             {
-                udp_port_buf = std::clamp(udp_port_buf, 1, 65535);
-                config.udp_ip = udp_ip_buf;
-                config.udp_port = udp_port_buf;
-                OverlayConfig_MarkDirty();
-                capture_method_changed.store(true);
+                const auto row = OverlayUI::BeginSettingRow("UDP IP");
+                ImGui::InputText("##value", udp_ip_buf, IM_ARRAYSIZE(udp_ip_buf));
+                OverlayUI::EndSettingRow(row);
+            }
+            {
+                const auto row = OverlayUI::BeginSettingRow("UDP Port");
+                ImGui::InputInt("##value", &udp_port_buf);
+                OverlayUI::EndSettingRow(row);
+            }
+            {
+                const auto row = OverlayUI::BeginSettingRow("UDP settings");
+                if (ImGui::Button("Apply UDP Settings", ImVec2(row.controlWidth, 0.0f)))
+                {
+                    udp_port_buf = std::clamp(udp_port_buf, 1, 65535);
+                    config.udp_ip = udp_ip_buf;
+                    config.udp_port = udp_port_buf;
+                    OverlayConfig_MarkDirty();
+                    capture_method_changed.store(true);
+                }
+                OverlayUI::EndSettingRow(row);
             }
 
             OverlayUI::EndSection();

@@ -333,7 +333,11 @@ void draw_debug_frame()
 
     if (!g_debugSRV) return;
 
-    ImGui::SliderFloat("Debug scale", &debug_scale, 0.1f, 2.0f, "%.1fx");
+    {
+        const auto row = OverlayUI::BeginSettingRow("Debug scale");
+        ImGui::SliderFloat("##value", &debug_scale, 0.1f, 2.0f, "%.1fx");
+        OverlayUI::EndSettingRow(row);
+    }
 
     ImVec2 image_size(texW * debug_scale, texH * debug_scale);
     ImGui::Image((ImTextureID)(intptr_t)g_debugSRV, image_size);
@@ -434,9 +438,13 @@ void draw_capture_preview()
 {
     if (OverlayUI::BeginSection("Capture Preview", "capture_section_preview"))
     {
-        if (ImGui::Checkbox("Show Preview Window", &config.show_window))
         {
-            OverlayConfig_MarkDirty();
+            const auto row = OverlayUI::BeginSettingRow("Show Preview Window");
+            if (ImGui::Checkbox("##value", &config.show_window))
+            {
+                OverlayConfig_MarkDirty();
+            }
+            OverlayUI::EndSettingRow(row);
         }
 
         if (config.show_window)

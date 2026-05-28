@@ -328,9 +328,9 @@ int main()
             std::cin.get();
             return -1;
         }
-        if (!CreateDirectory(L"models\\depth", NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+        if (!CreateDirectory(L"depth_models", NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
         {
-            std::cout << "[MAIN] Error with models\\depth folder" << std::endl;
+            std::cout << "[MAIN] Error with depth_models folder" << std::endl;
             std::cin.get();
             return -1;
         }
