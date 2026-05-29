@@ -2,6 +2,11 @@
 #include <numeric>
 #include <chrono>
 #include <limits>
+#include <cmath>
+#include <vector>
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/dnn.hpp> 
 
 #include "postProcess.h"
 #include "sunone_aimbot_2.h"
@@ -9,68 +14,45 @@
 #include "trt_detector.h"
 #endif
 
+
+
+
+
 void NMS(std::vector<Detection>& detections, float nmsThreshold, std::chrono::duration<double, std::milli>* nmsTime)
 {
     if (detections.empty()) return;
 
     if (nmsThreshold <= 0.0f)
     {
-        if (nmsTime)
-        {
-            *nmsTime = std::chrono::duration<double, std::milli>(0);
-        }
+        if (nmsTime) *nmsTime = std::chrono::duration<double, std::milli>(0);
         return;
     }
 
     auto t0 = std::chrono::steady_clock::now();
 
-    std::sort(
-        detections.begin(),
-        detections.end(),
-        [](const Detection& a, const Detection& b)
-        {
-            return a.confidence > b.confidence;
-        }
-    );
+   
+    std::vector<cv::Rect> boxes;
+    std::vector<float> confs;
+    boxes.reserve(detections.size());
+    confs.reserve(detections.size());
 
-    std::vector<bool> suppress(detections.size(), false);
-    std::vector<Detection> result;
-    result.reserve(detections.size());
-
-    for (size_t i = 0; i < detections.size(); ++i)
-    {
-        if (suppress[i]) continue;
-
-        result.push_back(detections[i]);
-
-        const cv::Rect& box_i = detections[i].box;
-        const float area_i = static_cast<float>(box_i.area());
-
-        for (size_t j = i + 1; j < detections.size(); ++j)
-        {
-            if (suppress[j]) continue;
-
-            const cv::Rect& box_j = detections[j].box;
-            const cv::Rect intersection = box_i & box_j;
-
-            if (intersection.width > 0 && intersection.height > 0)
-            {
-                const float intersection_area = static_cast<float>(intersection.area());
-                const float union_area = area_i + static_cast<float>(box_j.area()) - intersection_area;
-
-                if (intersection_area / union_area > nmsThreshold)
-                {
-                    suppress[j] = true;
-                }
-            }
-        }
+    for (const auto& d : detections) {
+        boxes.push_back(d.box);
+        confs.push_back(d.confidence);
     }
 
+    std::vector<int> indices;
+    cv::dnn::NMSBoxes(boxes, confs, 0.0f, nmsThreshold, indices);
+
+    std::vector<Detection> result;
+    result.reserve(indices.size());
+    for (int idx : indices) {
+        result.push_back(detections[idx]);
+    }
     detections = std::move(result);
 
     auto t1 = std::chrono::steady_clock::now();
-    if (nmsTime)
-    {
+    if (nmsTime) {
         *nmsTime = t1 - t0;
     }
 }
@@ -169,6 +151,10 @@ std::vector<Detection> postProcessYolo(
 }
 #endif
 
+
+
+
+
 std::vector<Detection> postProcessYoloDML(
     const float* output,
     const std::vector<int64_t>& shape,
@@ -179,15 +165,17 @@ std::vector<Detection> postProcessYoloDML(
 )
 {
     std::vector<Detection> detections;
-    if (shape.size() != 2) return detections;
+    
+    int64_t rows, cols;
+    if (shape.size() == 2) { rows = shape[0]; cols = shape[1]; }
+    else if (shape.size() == 3) { rows = shape[1]; cols = shape[2]; }
+    else return detections;
 
-    int64_t rows = shape[0];
-    int64_t cols = shape[1];
     if (rows <= 0 || cols <= 0) return detections;
-    if (rows > std::numeric_limits<int>::max() || cols > std::numeric_limits<int>::max()) return detections;
     const int rows_i = static_cast<int>(rows);
     const int cols_i = static_cast<int>(cols);
 
+    
     if (cols_i == 6)
     {
         const int numDetections = rows_i;
@@ -216,27 +204,52 @@ std::vector<Detection> postProcessYoloDML(
         return detections;
     }
 
-    cv::Mat det_output(rows_i, cols_i, CV_32F, (void*)output);
-    for (int i = 0; i < cols_i; ++i) {
-        cv::Mat classes_scores = det_output.col(i).rowRange(4, 4 + numClasses);
-        cv::Point class_id_point;
-        double score;
-        cv::minMaxLoc(classes_scores, nullptr, &score, nullptr, &class_id_point);
-        if (score > confThreshold) {
-            float cx = det_output.at<float>(0, i);
-            float cy = det_output.at<float>(1, i);
-            float ow = det_output.at<float>(2, i);
-            float oh = det_output.at<float>(3, i);
-            const float half_ow = 0.5f * ow;
-            const float half_oh = 0.5f * oh;
-            cv::Rect box;
-            box.x = static_cast<int>(cx - half_ow);
-            box.y = static_cast<int>(cy - half_oh);
-            box.width = static_cast<int>(ow);
-            box.height = static_cast<int>(oh);
-            detections.push_back(Detection{ box, static_cast<float>(score), class_id_point.y });
+    
+    static thread_local std::vector<float> max_scores;
+    static thread_local std::vector<int> max_class_ids;
+    
+    if (max_scores.size() < static_cast<size_t>(cols_i)) {
+        max_scores.resize(cols_i);
+        max_class_ids.resize(cols_i);
+    }
+    
+    std::fill_n(max_scores.begin(), cols_i, 0.0f);
+    std::fill_n(max_class_ids.begin(), cols_i, -1);
+
+    const float* p_classes = output + 4 * cols_i;
+
+    for (int c = 0; c < numClasses; ++c) {
+        const float* class_row = p_classes + c * cols_i;
+        for (int i = 0; i < cols_i; ++i) {
+            if (class_row[i] > max_scores[i]) {
+                max_scores[i] = class_row[i];
+                max_class_ids[i] = c;
+            }
         }
     }
+
+    const float* p_cx = output;
+    const float* p_cy = output + cols_i;
+    const float* p_w  = output + 2 * cols_i;
+    const float* p_h  = output + 3 * cols_i;
+
+    detections.reserve(200); 
+
+    for (int i = 0; i < cols_i; ++i) {
+        if (max_scores[i] > confThreshold) {
+            float ow = p_w[i];
+            float oh = p_h[i];
+
+            cv::Rect box;
+            box.x = static_cast<int>(p_cx[i] - 0.5f * ow);
+            box.y = static_cast<int>(p_cy[i] - 0.5f * oh);
+            box.width = static_cast<int>(ow);
+            box.height = static_cast<int>(oh);
+
+            detections.push_back(Detection{ box, max_scores[i], max_class_ids[i] });
+        }
+    }
+
     if (!detections.empty())
     {
         NMS(detections, nmsThreshold, nmsTime);
