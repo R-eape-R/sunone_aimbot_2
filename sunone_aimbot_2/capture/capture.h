@@ -36,6 +36,10 @@ class IScreenCapture
 public:
     virtual ~IScreenCapture() {}
     virtual cv::Mat GetNextFrameCpu() = 0;
+
+    
+    virtual const float* GetPrecomputedTensor() { return nullptr; }
+    virtual void UnlockTensor() {}
 };
 
 #ifdef USE_CUDA
