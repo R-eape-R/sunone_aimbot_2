@@ -1,4 +1,4 @@
-﻿#ifndef DUPLICATION_API_CAPTURE_H
+#ifndef DUPLICATION_API_CAPTURE_H
 #define DUPLICATION_API_CAPTURE_H
 
 #include <d3d11.h>
@@ -10,19 +10,6 @@
 #include <cuda_runtime_api.h>
 #include <opencv2/core/cuda.hpp>
 struct cudaGraphicsResource;
-
-enum class GpuCaptureStatus
-{
-    Captured,
-    NotReady,
-    Timeout,
-    DeviceLost,
-    AcquireFailed,
-    MissingTexture,
-    CudaMapFailed,
-    CudaArrayFailed,
-    CudaCopyFailed
-};
 #endif
 
 #include "capture.h"
@@ -36,9 +23,12 @@ public:
     ~DuplicationAPIScreenCapture();
 
     cv::Mat GetNextFrameCpu() override;
-    bool isInitialized() const { return initialized_; }
+    
+    const float* GetPrecomputedTensor() override;
+    void UnlockTensor() override;
+
 #ifdef USE_CUDA
-    bool GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra, GpuCaptureStatus* status = nullptr);
+    bool GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra);
 #endif
 
 private:
@@ -56,19 +46,17 @@ private:
     ID3D11Texture2D* interopTextureGPU = nullptr;
     cudaGraphicsResource* cudaInteropResource = nullptr;
     bool cudaInteropReady = false;
+    
+    bool createCudaInteropTexture();
+    void releaseCudaInteropTexture();
 #endif
 
     int screenWidth = 0;
     int screenHeight = 0;
     int regionWidth = 0;
     int regionHeight = 0;
-    bool initialized_ = false;
 
     bool createStagingTextureCPU();
-#ifdef USE_CUDA
-    bool createCudaInteropTexture();
-    void releaseCudaInteropTexture();
-#endif
 };
 
 #endif // DUPLICATION_API_CAPTURE_H
