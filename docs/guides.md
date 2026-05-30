@@ -7,9 +7,9 @@ This page is for practical setup and diagnosis. It avoids source-code detail unl
 1. Pick the right build:
    - Use **DML** if you want easiest setup or non-NVIDIA compatibility.
    - Use **CUDA + TensorRT** if you have the NVIDIA CUDA/TensorRT stack ready.
-2. Put the correct model beside the executable or in the configured model folder:
+2. Put the detector model in the `models` folder beside `ai.exe`:
    - DML uses `.onnx`.
-   - TensorRT uses `.engine`.
+   - TensorRT normally uses `.engine`; a CUDA build can also build an `.engine` from a selected `.onnx`.
 3. Start the app once so `config.ini` is generated.
 4. Open the GUI or overlay and save settings from there when possible.
 5. Confirm the selected `input_method` matches the device/control path you actually want.
@@ -28,7 +28,7 @@ This page is for practical setup and diagnosis. It avoids source-code detail unl
 - You have an NVIDIA GPU.
 - CUDA Toolkit and TensorRT are installed.
 - You want the highest-performance backend.
-- You are using a TensorRT `.engine` model.
+- You are using a TensorRT `.engine` model, or you have an `.onnx` ready for first-time engine generation.
 
 ## DML Runs But Does Not Detect Anything
 
@@ -220,21 +220,20 @@ game_overlay_draw_circle_fov = true
 
 If you are measuring performance, test with the preview closed and then open so you can see how CPU-copy needs change.
 
-### Frame-Age Latency Compensation
+### Latency Compensation
 
-The current source keeps the confidence-aware detection buffer, explicit Razer/Teensy controls, and no-fallback input routing while using the classic target tracker.
+The app compensates for the delay between frame capture, inference, and display.
+This keeps aim and overlay drawing closer to what is currently on screen instead
+of where the target was when the frame was captured.
 
-When a frame is captured, the capture thread records a `steady_clock` timestamp before CPU preprocessing or TensorRT submission. DML and TensorRT carry that timestamp into `DetectionBuffer` along with boxes, classes, and confidences. The mouse thread uses the timestamp as the observation time for target tracking and prediction, then subtracts mouse movement that happened after the frame was captured.
-
-The game overlay uses the same timestamp to project boxes/icons forward by track velocity and backward by recorded camera movement. This helps boxes stay aligned with what the user currently sees instead of where the target was when the old frame was captured.
-
-Use this key to disable only the visual overlay correction while leaving aim-side timestamp handling active:
+Use this key only if the game overlay boxes appear over-corrected or under-corrected:
 
 ```ini
 game_overlay_compensate_latency = false
 ```
 
-The movement trail is populated only after the selected input backend reports or accepts a movement. It does not introduce a fallback control path.
+This setting affects the visual overlay correction. It does not switch input
+methods and does not create a fallback control path.
 
 ## Data Collection Guide
 
@@ -272,7 +271,7 @@ The no-options builder only asks DML or CUDA and then builds the existing CMake 
 
 ```ini
 backend = DML
-ai_model = sunxds_0.5.6.onnx
+ai_model = your_model.onnx
 input_method = WIN32
 circle_fov_enabled = true
 ```
@@ -281,7 +280,7 @@ circle_fov_enabled = true
 
 ```ini
 backend = TRT
-ai_model = sunxds_0.5.6.engine
+ai_model = your_model.engine
 capture_method = duplication_api
 capture_use_cuda = true
 show_window = false
@@ -289,6 +288,21 @@ collect_data_while_playing = false
 ```
 
 Then check `[CaptureDiag]` output.
+
+### Provider Benchmark
+
+Use this when you want a repeatable ONNX Runtime provider comparison without starting capture, overlay, input devices, or file logging:
+
+```powershell
+.\ai.exe --benchmark-providers
+.\ai.exe --benchmark-providers cpu,dml-gpu --bench-runs 200 --bench-warmup 20
+.\ai.exe --benchmark-providers dml-gpu,dml-cpu --bench-model models\your_model.onnx
+.\ai.exe --benchmark-providers cuda --bench-model models\your_model.onnx --bench-cuda-model models\your_model.engine
+```
+
+The benchmark prints one final CSV-style summary in seconds. Providers are `cpu`, `cuda`, `dml-gpu`, and `dml-cpu`; `cuda` uses the TensorRT engine path in CUDA builds, and `dml-cpu` uses DirectML through the WARP software adapter. If no model is passed, the benchmark skips ONNX candidates that cannot initialize on the requested available providers.
+
+Each benchmark run appends rows to `benchmark_results\provider_benchmark.csv` under the repository root with the commit id, dirty flag, `model_family`, `onnx_model`, `cuda_engine_model`, `provider_model`, provider, and timing data. For `cuda`, `provider_model` is the `.engine` actually used by TensorRT. Use `--bench-no-save` for a disposable run.
 
 ### Razer Control Test
 
@@ -318,12 +332,8 @@ Start broad with `AUTO`, then narrow filters after the device is confirmed.
 Use this order:
 
 1. Confirm build family: DML or CUDA.
-2. Confirm model type: `.onnx` for DML, `.engine` for TensorRT.
+2. Confirm model type: `.onnx` for DML, `.engine` for TensorRT, or `.onnx` when you want CUDA to generate a new engine.
 3. Confirm capture is showing the expected content.
 4. Confirm selected `input_method` has its required runtime/device.
 5. Turn on useful logs or diagnostics.
-6. Run the regression checks after source changes:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\regression_checks.ps1
-```
+6. Rebuild through the matching wrapper and run a real DML or CUDA smoke test after source changes.
