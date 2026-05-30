@@ -15,6 +15,8 @@ UDPCapture::UDPCapture(int width, int height, const std::string& ip, int port)
     , received_frames_(0)
     , dropped_frames_(0)
 {
+    SetSourceDimensions(width_, height_);
+
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {

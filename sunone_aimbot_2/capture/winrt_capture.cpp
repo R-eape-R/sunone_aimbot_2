@@ -9,6 +9,7 @@
 
 #include "winrt_capture.h"
 #include "sunone_aimbot_2.h"
+#include "other_tools.h"
 
 #include <dwmapi.h>
 
@@ -18,33 +19,6 @@
 using namespace winrt::Windows::Graphics::Capture;
 using namespace winrt::Windows::Graphics::DirectX;
 using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
-
-static HMONITOR GetMonitorHandleByIndex(int index)
-{
-    index = std::max(0, index);
-
-    struct MonitorEnumData
-    {
-        int targetIndex;
-        int currentIndex;
-        HMONITOR hMonitor;
-    } data{ index, 0, nullptr };
-
-    auto enumCallback = [](HMONITOR monitor, HDC, LPRECT, LPARAM lParam) -> BOOL
-        {
-            auto& d = *reinterpret_cast<MonitorEnumData*>(lParam);
-            if (d.currentIndex == d.targetIndex)
-            {
-                d.hMonitor = monitor;
-                return FALSE;
-            }
-            d.currentIndex++;
-            return TRUE;
-        };
-
-    EnumDisplayMonitors(nullptr, nullptr, enumCallback, reinterpret_cast<LPARAM>(&data));
-    return data.hMonitor;
-}
 
 winrt::com_ptr<IGraphicsCaptureItemInterop> GetInteropFactory()
 {
@@ -145,6 +119,7 @@ WinRTScreenCapture::WinRTScreenCapture(int desiredWidth, int desiredHeight, cons
 
     screenWidth = captureItem.Size().Width;
     screenHeight = captureItem.Size().Height;
+    SetSourceDimensions(screenWidth, screenHeight);
     desiredRegionWidth = std::max(1, desiredRegionWidth);
     desiredRegionHeight = std::max(1, desiredRegionHeight);
     regionWidth = std::clamp(desiredRegionWidth, 1, std::max(1, screenWidth));
@@ -237,6 +212,7 @@ cv::Mat WinRTScreenCapture::GetNextFrameCpu()
     {
         screenWidth = contentSize.Width;
         screenHeight = contentSize.Height;
+        SetSourceDimensions(screenWidth, screenHeight);
 
         regionWidth = std::clamp(desiredRegionWidth, 1, std::max(1, screenWidth));
         regionHeight = std::clamp(desiredRegionHeight, 1, std::max(1, screenHeight));

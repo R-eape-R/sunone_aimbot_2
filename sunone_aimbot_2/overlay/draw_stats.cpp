@@ -144,8 +144,11 @@ void draw_stats()
     const int captureFpsLimit = std::max(0, config.capture_fps);
     const float currentFrameTimeMs = (current_fps > 0.01f) ? (1000.0f / current_fps) : 0.0f;
     const float avgFrameTimeMs = (avg_fps_cached > 0.01f) ? (1000.0f / avg_fps_cached) : 0.0f;
+    const int sourceWidth = screenWidth.load(std::memory_order_relaxed);
+    const int sourceHeight = screenHeight.load(std::memory_order_relaxed);
 
     std::string captureSource = "Unknown";
+    std::string sourceSizeLabel = "Desktop size";
     if (config.capture_method == "duplication_api")
     {
         captureSource = "Monitor " + std::to_string(std::max(0, config.monitor_idx) + 1);
@@ -157,6 +160,7 @@ void draw_stats()
             captureSource = config.capture_window_title.empty()
                 ? "Window target is empty"
                 : "Window: " + config.capture_window_title;
+            sourceSizeLabel = "Window size";
         }
         else
         {
@@ -169,10 +173,12 @@ void draw_stats()
             "Camera: " + config.virtual_camera_name + " (" +
             std::to_string(config.virtual_camera_width) + "x" +
             std::to_string(config.virtual_camera_heigth) + ")";
+        sourceSizeLabel = "Camera size";
     }
     else if (config.capture_method == "udp_capture")
     {
         captureSource = "UDP " + config.udp_ip + ":" + std::to_string(config.udp_port);
+        sourceSizeLabel = "Stream size";
     }
 
     if (OverlayUI::BeginSection("Capture Details", "stats_section_capture_details"))
@@ -181,10 +187,10 @@ void draw_stats()
         ImGui::Text("Backend: %s", config.backend.c_str());
         ImGui::TextWrapped("Source: %s", captureSource.c_str());
 
-        if (screenWidth > 0 && screenHeight > 0)
-            ImGui::Text("Desktop size: %dx%d", screenWidth, screenHeight);
+        if (sourceWidth > 0 && sourceHeight > 0)
+            ImGui::Text("%s: %dx%d", sourceSizeLabel.c_str(), sourceWidth, sourceHeight);
         else
-            ImGui::TextDisabled("Desktop size: n/a");
+            ImGui::TextDisabled("%s: n/a", sourceSizeLabel.c_str());
 
         if (latestWidth > 0 && latestHeight > 0)
             ImGui::Text("Latest frame: %dx%d", latestWidth, latestHeight);

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "virtual_camera.h"
+#include "other_tools.h"
 
 #pragma comment(lib, "strmiids.lib")
 
@@ -72,27 +73,6 @@ bool ContainsCaseInsensitive(const std::string& haystack, const std::string& nee
     const std::string h = ToLowerCopy(haystack);
     const std::string n = ToLowerCopy(needle);
     return h.find(n) != std::string::npos;
-}
-
-std::string WideToUtf8(const std::wstring& w)
-{
-    if (w.empty())
-        return {};
-
-    const int required = WideCharToMultiByte(
-        CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr
-    );
-    if (required <= 0)
-        return {};
-
-    std::string out(static_cast<size_t>(required), '\0');
-    const int converted = WideCharToMultiByte(
-        CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), out.data(), required, nullptr, nullptr
-    );
-    if (converted <= 0)
-        return {};
-
-    return out;
 }
 
 std::string BackendToString(int backend)
@@ -479,6 +459,7 @@ VirtualCameraCapture::VirtualCameraCapture(
 
     roiW_ = even(std::max(2, w));
     roiH_ = even(std::max(2, h));
+    SetSourceDimensions(roiW_, roiH_);
 
     if (verbose_)
     {

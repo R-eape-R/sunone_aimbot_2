@@ -283,6 +283,7 @@ DuplicationAPIScreenCapture::DuplicationAPIScreenCapture(int desiredWidth, int d
 
     regionWidth = std::clamp(regionWidth, 1, std::max(1, screenWidth));
     regionHeight = std::clamp(regionHeight, 1, std::max(1, screenHeight));
+    SetSourceDimensions(screenWidth, screenHeight);
 
     initialized_ = createStagingTextureCPU();
     if (!initialized_)

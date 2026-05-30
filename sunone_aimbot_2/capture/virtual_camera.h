@@ -26,7 +26,7 @@ private:
     int captureFps_{ 0 };
     bool verbose_{ false };
 
-    int roiW_, roiH_;
+    int roiW_{ 0 }, roiH_{ 0 };
 
     cv::Mat frameCpu;
 };

@@ -612,6 +612,8 @@ int get_active_monitors()
 
 HMONITOR GetMonitorHandleByIndex(int monitorIndex)
 {
+    monitorIndex = std::max(0, monitorIndex);
+
     struct MonitorSearch
     {
         int targetIndex;

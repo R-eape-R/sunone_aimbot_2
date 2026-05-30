@@ -17,8 +17,8 @@ extern std::atomic<bool> capture_window_changed;
 extern std::deque<cv::Mat> frameQueue;
 
 void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT);
-extern int screenWidth;
-extern int screenHeight;
+extern std::atomic<int> screenWidth;
+extern std::atomic<int> screenHeight;
 
 extern std::atomic<int> captureFrameCount;
 extern std::atomic<int> captureFps;
@@ -36,6 +36,23 @@ class IScreenCapture
 public:
     virtual ~IScreenCapture() {}
     virtual cv::Mat GetNextFrameCpu() = 0;
+    bool GetSourceDimensions(int& width, int& height) const
+    {
+        width = sourceWidth_;
+        height = sourceHeight_;
+        return width > 0 && height > 0;
+    }
+
+protected:
+    void SetSourceDimensions(int width, int height)
+    {
+        sourceWidth_ = width;
+        sourceHeight_ = height;
+    }
+
+private:
+    int sourceWidth_ = 0;
+    int sourceHeight_ = 0;
 };
 
 #ifdef USE_CUDA

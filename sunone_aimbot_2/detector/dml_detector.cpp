@@ -87,6 +87,11 @@ int findOutputIndex(const std::vector<std::string>& names, const char* wanted)
     return -1;
 }
 
+OrtLoggingLevel getDmlOrtLogLevel()
+{
+    return config.verbose ? ORT_LOGGING_LEVEL_WARNING : ORT_LOGGING_LEVEL_ERROR;
+}
+
 std::vector<Detection> decodeSunPointRaw(
     const float* heat,
     const std::vector<int64_t>& heatShape,
@@ -315,11 +320,14 @@ std::string GetDMLDeviceName(int deviceId)
 
 DirectMLDetector::DirectMLDetector(const std::string& model_path)
     :
-    env(ORT_LOGGING_LEVEL_WARNING, "DML_Detector"),
+    env(getDmlOrtLogLevel(), "DML_Detector"),
     memory_info(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
 {
+    session_options.SetLogId("DML_Detector");
+    session_options.SetLogSeverityLevel(static_cast<int>(getDmlOrtLogLevel()));
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     session_options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+    session_options.DisableMemPattern();
     session_options.SetIntraOpNumThreads(1);
     session_options.SetInterOpNumThreads(1);
 
@@ -339,6 +347,9 @@ DirectMLDetector::~DirectMLDetector()
 
 void DirectMLDetector::initializeModel(const std::string& model_path)
 {
+    env.UpdateEnvWithCustomLogLevel(getDmlOrtLogLevel());
+    session_options.SetLogSeverityLevel(static_cast<int>(getDmlOrtLogLevel()));
+
     std::wstring model_path_wide(model_path.begin(), model_path.end());
     session = Ort::Session(env, model_path_wide.c_str(), session_options);
 

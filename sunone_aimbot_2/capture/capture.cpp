@@ -43,8 +43,8 @@
 cv::Mat latestFrame;
 std::mutex frameMutex;
 
-int screenWidth = 0;
-int screenHeight = 0;
+std::atomic<int> screenWidth(0);
+std::atomic<int> screenHeight(0);
 
 std::atomic<int> captureFrameCount(0);
 std::atomic<int> captureFps(0);
@@ -477,10 +477,28 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             }
         };
 
+        auto publishCaptureSourceSize = [](const IScreenCapture* capture)
+        {
+            int sourceWidth = 0;
+            int sourceHeight = 0;
+            if (capture && capture->GetSourceDimensions(sourceWidth, sourceHeight) &&
+                sourceWidth > 0 && sourceHeight > 0)
+            {
+                screenWidth.store(sourceWidth, std::memory_order_relaxed);
+                screenHeight.store(sourceHeight, std::memory_order_relaxed);
+            }
+            else
+            {
+                screenWidth.store(0, std::memory_order_relaxed);
+                screenHeight.store(0, std::memory_order_relaxed);
+            }
+        };
+
         std::string desiredCaptureMethod = NormalizeCaptureMethod(currentCfg.capture_method);
         winrtApartment.Ensure(desiredCaptureMethod == "winrt");
 
         std::unique_ptr<IScreenCapture> capturer = createCapturer(currentCfg, captureWidth, captureHeight);
+        publishCaptureSourceSize(capturer.get());
         std::string activeCapturerMethod = capturer ? desiredCaptureMethod : std::string();
         auto lastCapturerCreateAttempt = std::chrono::steady_clock::now();
 
@@ -611,6 +629,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                     VirtualCameraCapture::GetAvailableVirtualCameras(true);
 
                 capturer = createCapturer(currentCfg, captureWidth, captureHeight);
+                publishCaptureSourceSize(capturer.get());
                 if (capturer)
                     activeCapturerMethod = nextMethod;
                 else
@@ -633,6 +652,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                         VirtualCameraCapture::GetAvailableVirtualCameras(true);
 
                     capturer = createCapturer(currentCfg, captureWidth, captureHeight);
+                    publishCaptureSourceSize(capturer.get());
                     lastCapturerCreateAttempt = now;
 
                     if (capturer)
@@ -949,6 +969,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             if (frameSubmittedToDetector || !screenshotCpu.empty())
             {
                 lastSuccessfulFrameTime = std::chrono::steady_clock::now();
+                publishCaptureSourceSize(capturer.get());
                 setCaptureAvailable();
             }
 
@@ -995,6 +1016,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             {
                 std::cerr << "[Capture] Loop exception: " << e.what() << std::endl;
                 capturer.reset();
+                publishCaptureSourceSize(nullptr);
                 activeCapturerMethod.clear();
                 winrtApartment.Ensure(false);
                 setCaptureUnavailable();
@@ -1004,6 +1026,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             {
                 std::cerr << "[Capture] Loop exception: unknown." << std::endl;
                 capturer.reset();
+                publishCaptureSourceSize(nullptr);
                 activeCapturerMethod.clear();
                 winrtApartment.Ensure(false);
                 setCaptureUnavailable();
