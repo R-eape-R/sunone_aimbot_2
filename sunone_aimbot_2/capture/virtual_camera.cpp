@@ -6,7 +6,6 @@
 #include <dshow.h>
 
 #include <algorithm>
-#include <cctype>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
@@ -46,33 +45,6 @@ std::vector<std::string>& CameraNameCache()
 {
     static std::vector<std::string> cache;
     return cache;
-}
-
-std::string TrimCopy(const std::string& s)
-{
-    size_t b = 0;
-    size_t e = s.size();
-    while (b < e && std::isspace(static_cast<unsigned char>(s[b])))
-        ++b;
-    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1])))
-        --e;
-    return s.substr(b, e - b);
-}
-
-std::string ToLowerCopy(const std::string& s)
-{
-    std::string out = s;
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    return out;
-}
-
-bool ContainsCaseInsensitive(const std::string& haystack, const std::string& needle)
-{
-    const std::string h = ToLowerCopy(haystack);
-    const std::string n = ToLowerCopy(needle);
-    return h.find(n) != std::string::npos;
 }
 
 std::string BackendToString(int backend)
@@ -150,7 +122,7 @@ std::vector<CameraCandidate> EnumerateDirectShowCandidates()
             moniker->Release();
             moniker = nullptr;
 
-            name = TrimCopy(name);
+            name = OtherTools::TrimAscii(name);
             if (name.empty())
                 name = "Camera " + std::to_string(index);
 
@@ -215,7 +187,7 @@ void EnsureDisplayNamesAreUnique(std::vector<CameraCandidate>& list)
         if (c.displayName.empty())
             c.displayName = "Camera " + std::to_string(c.index);
 
-        const std::string key = ToLowerCopy(c.displayName);
+        const std::string key = OtherTools::ToLowerAscii(c.displayName);
         int& count = seen[key];
         if (count > 0)
         {
@@ -259,7 +231,7 @@ std::vector<CameraCandidate> GetCameraCandidates(bool forceRescan)
 
 int ScoreAutoCameraChoice(const CameraCandidate& c)
 {
-    const std::string n = ToLowerCopy(c.displayName);
+    const std::string n = OtherTools::ToLowerAscii(c.displayName);
     int score = 0;
 
     if (n.find("obs virtual camera") != std::string::npos)
@@ -280,13 +252,13 @@ int ScoreAutoCameraChoice(const CameraCandidate& c)
 
 int FindExactNameMatch(const std::vector<CameraCandidate>& candidates, const std::string& requestedName)
 {
-    const std::string key = ToLowerCopy(TrimCopy(requestedName));
+    const std::string key = OtherTools::ToLowerAscii(OtherTools::TrimAscii(requestedName));
     if (key.empty())
         return -1;
 
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        if (ToLowerCopy(candidates[i].displayName) == key)
+        if (OtherTools::ToLowerAscii(candidates[i].displayName) == key)
             return static_cast<int>(i);
     }
     return -1;
@@ -294,13 +266,13 @@ int FindExactNameMatch(const std::vector<CameraCandidate>& candidates, const std
 
 int FindPartialNameMatch(const std::vector<CameraCandidate>& candidates, const std::string& requestedName)
 {
-    const std::string key = ToLowerCopy(TrimCopy(requestedName));
+    const std::string key = OtherTools::ToLowerAscii(OtherTools::TrimAscii(requestedName));
     if (key.empty())
         return -1;
 
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        if (ContainsCaseInsensitive(candidates[i].displayName, key))
+        if (OtherTools::ContainsCaseInsensitive(candidates[i].displayName, key))
             return static_cast<int>(i);
     }
     return -1;
@@ -319,8 +291,8 @@ std::vector<int> BuildOpenOrder(const std::vector<CameraCandidate>& candidates, 
             order.push_back(idx);
     };
 
-    const std::string trimmedRequest = TrimCopy(requestedName);
-    const std::string lowerRequest = ToLowerCopy(trimmedRequest);
+    const std::string trimmedRequest = OtherTools::TrimAscii(requestedName);
+    const std::string lowerRequest = OtherTools::ToLowerAscii(trimmedRequest);
     const bool autoSelect = trimmedRequest.empty() || lowerRequest == "none" || lowerRequest == "auto";
 
     if (!autoSelect)
@@ -397,7 +369,7 @@ VirtualCameraCapture::VirtualCameraCapture(
     }
 
     const std::string requestedName = selectedCameraName_;
-    if (!requestedName.empty() && ToLowerCopy(TrimCopy(requestedName)) != "none")
+    if (!requestedName.empty() && OtherTools::ToLowerAscii(OtherTools::TrimAscii(requestedName)) != "none")
     {
         int exact = FindExactNameMatch(candidates, requestedName);
         int partial = (exact >= 0) ? exact : FindPartialNameMatch(candidates, requestedName);

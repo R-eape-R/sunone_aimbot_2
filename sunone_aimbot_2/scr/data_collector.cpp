@@ -2,6 +2,7 @@
 #include <Windows.h>
 
 #include "scr/data_collector.h"
+#include "other_tools.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -58,16 +59,6 @@ struct CollectAttempt
 CollectRuntimeState g_collectRuntimeState;
 std::mutex g_collectRuntimeMutex;
 
-std::string TrimAscii(std::string s)
-{
-    const size_t start = s.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos)
-        return "";
-
-    const size_t end = s.find_last_not_of(" \t\r\n");
-    return s.substr(start, end == std::string::npos ? std::string::npos : (end - start + 1));
-}
-
 std::string GetExecutableDir()
 {
     wchar_t exePath[MAX_PATH] = {};
@@ -112,7 +103,7 @@ std::set<int> ParseRecordClasses(const char* s)
     std::string item;
     while (std::getline(ss, item, ','))
     {
-        item = TrimAscii(item);
+        item = OtherTools::TrimAscii(item);
         if (item.empty())
             continue;
 
@@ -155,7 +146,7 @@ std::string ModelNameToFolder(const char* model_name)
     if (!model_name || model_name[0] == '\0')
         return "default";
 
-    std::string s = TrimAscii(model_name);
+    std::string s = OtherTools::TrimAscii(model_name);
     if (s.empty())
         return "default";
 
@@ -379,7 +370,7 @@ void SaveCollectedFrame(const std::string& root_dir,
 
 std::filesystem::path ResolveCollectOutputDir(const std::string& root_dir, const char* output_dir_raw)
 {
-    const std::string cleaned = TrimAscii(output_dir_raw ? std::string(output_dir_raw) : std::string());
+    const std::string cleaned = OtherTools::TrimAscii(output_dir_raw ? std::string(output_dir_raw) : std::string());
     if (cleaned.empty())
     {
         const std::string base_dir = root_dir.empty() ? GetExecutableDir() : root_dir;

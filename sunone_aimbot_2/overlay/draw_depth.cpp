@@ -8,7 +8,6 @@
 #include <filesystem>
 #include <string>
 #include <algorithm>
-#include <cctype>
 #include <exception>
 #include <thread>
 #include <atomic>
@@ -57,25 +56,6 @@ static const char* kDepthColormapNames[] = {
     "Deepgreen"
 };
 
-namespace
-{
-    bool HasExtensionCaseInsensitive(const std::string& path, const char* ext)
-    {
-        if (!ext || !*ext)
-        {
-            return false;
-        }
-
-        std::filesystem::path p(path);
-        std::string current = p.extension().string();
-        std::string expected = ext;
-        std::transform(current.begin(), current.end(), current.begin(),
-            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        std::transform(expected.begin(), expected.end(), expected.begin(),
-            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return current == expected;
-    }
-}
 #endif
 
 void draw_depth()
@@ -172,7 +152,7 @@ void draw_depth()
             selectedModel = availableDepthModels[currentModelIndex];
         }
 
-        const bool selectedIsOnnx = hasModels && HasExtensionCaseInsensitive(selectedModel, ".onnx");
+        const bool selectedIsOnnx = hasModels && OtherTools::HasExtensionCaseInsensitive(selectedModel, ".onnx");
         const bool exportBusy = depthExportRunning.load();
         if (!hasModels || selectedIsOnnx || exportBusy)
         {
@@ -221,7 +201,7 @@ void draw_depth()
                     {
                         depthStatus = "Set a depth ONNX path to export.";
                     }
-                    else if (!HasExtensionCaseInsensitive(exportPath, ".onnx"))
+                    else if (!OtherTools::HasExtensionCaseInsensitive(exportPath, ".onnx"))
                     {
                         depthStatus = "Export expects an .onnx depth model path.";
                     }

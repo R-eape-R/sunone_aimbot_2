@@ -16,6 +16,11 @@ inline float MaxFloat(float a, float b) noexcept
 {
     return (a > b) ? a : b;
 }
+
+std::string TrimAscii(std::string s);
+std::string ToLowerAscii(std::string s);
+bool ContainsCaseInsensitive(const std::string& haystack, const std::string& needle);
+bool HasExtensionCaseInsensitive(const std::string& path, const char* ext);
 }
 
 std::vector<unsigned char> Base64Decode(const std::string& encoded_string);

@@ -330,14 +330,12 @@ void draw_capture_settings()
                 OverlayUI::EndSettingRow(row);
             }
 
-            std::string filter_lower = virtual_camera_filter_buf;
-            std::transform(filter_lower.begin(), filter_lower.end(), filter_lower.begin(), ::tolower);
+            std::string filter_lower = OtherTools::ToLowerAscii(virtual_camera_filter_buf);
 
             std::vector<int> filtered_indices;
             for (int i = 0; i < static_cast<int>(virtual_cameras.size()); ++i)
             {
-                std::string name_lower = virtual_cameras[i];
-                std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
+                std::string name_lower = OtherTools::ToLowerAscii(virtual_cameras[i]);
                 if (filter_lower.empty() || name_lower.find(filter_lower) != std::string::npos)
                 {
                     filtered_indices.push_back(i);

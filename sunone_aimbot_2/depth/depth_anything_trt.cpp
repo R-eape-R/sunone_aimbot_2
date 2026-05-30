@@ -1,14 +1,18 @@
 #ifdef USE_CUDA
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "depth_anything_trt.h"
 
 #include <NvOnnxParser.h>
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
 
+#include "other_tools.h"
 #include "tensorrt/trt_monitor.h"
 
 namespace depth_anything
@@ -25,19 +29,7 @@ namespace depth_anything
 #ifdef _WIN32
             const std::string leftStr = left.string();
             const std::string rightStr = right.string();
-            if (leftStr.size() != rightStr.size())
-            {
-                return false;
-            }
-            for (size_t i = 0; i < leftStr.size(); ++i)
-            {
-                if (std::tolower(static_cast<unsigned char>(leftStr[i])) !=
-                    std::tolower(static_cast<unsigned char>(rightStr[i])))
-                {
-                    return false;
-                }
-            }
-            return true;
+            return OtherTools::ToLowerAscii(leftStr) == OtherTools::ToLowerAscii(rightStr);
 #else
             return left == right;
 #endif
@@ -71,22 +63,6 @@ namespace depth_anything
                 }
             }
             return false;
-        }
-
-        bool HasExtensionCaseInsensitive(const std::filesystem::path& path, const char* ext)
-        {
-            if (!ext || !*ext)
-            {
-                return false;
-            }
-
-            std::string current = path.extension().string();
-            std::string expected = ext;
-            std::transform(current.begin(), current.end(), current.begin(),
-                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            std::transform(expected.begin(), expected.end(), expected.begin(),
-                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return current == expected;
         }
 
         std::string MakeEnginePathFromOnnx(const std::string& onnxPath)
@@ -442,7 +418,7 @@ namespace depth_anything
             return false;
         }
 
-        if (!HasExtensionCaseInsensitive(std::filesystem::path(resolvedPath), ".onnx"))
+        if (!OtherTools::HasExtensionCaseInsensitive(resolvedPath, ".onnx"))
         {
             last_error = "Depth export expects an .onnx model path.";
             return false;
@@ -659,7 +635,7 @@ namespace depth_anything
 
     bool DepthAnythingTrt::loadEngine(const std::string& modelPath, nvinfer1::ILogger& logger)
     {
-        if (HasExtensionCaseInsensitive(std::filesystem::path(modelPath), ".onnx"))
+        if (OtherTools::HasExtensionCaseInsensitive(modelPath, ".onnx"))
         {
             if (!buildEngine(modelPath, logger))
             {

@@ -118,6 +118,43 @@ static bool ReadFileToBuffer(const std::filesystem::path& path, std::vector<unsi
     return true;
 }
 
+namespace OtherTools
+{
+std::string TrimAscii(std::string s)
+{
+    const size_t start = s.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos)
+        return {};
+
+    const size_t end = s.find_last_not_of(" \t\r\n");
+    return s.substr(start, end == std::string::npos ? std::string::npos : (end - start + 1));
+}
+
+std::string ToLowerAscii(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool ContainsCaseInsensitive(const std::string& haystack, const std::string& needle)
+{
+    const std::string lowerHaystack = ToLowerAscii(haystack);
+    const std::string lowerNeedle = ToLowerAscii(needle);
+    return lowerHaystack.find(lowerNeedle) != std::string::npos;
+}
+
+bool HasExtensionCaseInsensitive(const std::string& path, const char* ext)
+{
+    if (!ext || !*ext)
+        return false;
+
+    const std::string current = ToLowerAscii(std::filesystem::path(path).extension().string());
+    const std::string expected = ToLowerAscii(ext);
+    return current == expected;
+}
+}
+
 static std::vector<std::string> GetModelFilesByExtInDir(const std::string& dir, const std::vector<std::string>& exts)
 {
     std::vector<std::string> files;
@@ -136,9 +173,7 @@ static std::vector<std::string> GetModelFilesByExtInDir(const std::string& dir, 
             continue;
         }
 
-        std::string ext = entry.path().extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(),
-            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::string ext = OtherTools::ToLowerAscii(entry.path().extension().string());
 
         const bool match = std::any_of(exts.begin(), exts.end(),
             [&ext](const std::string& e) { return ext == e; });
@@ -579,8 +614,7 @@ std::string get_ghub_version()
 
 bool contains_tensorrt(const std::string& path)
 {
-    std::string lowercase_path = path;
-    std::transform(lowercase_path.begin(), lowercase_path.end(), lowercase_path.begin(), ::tolower);
+    const std::string lowercase_path = OtherTools::ToLowerAscii(path);
     return lowercase_path.find("tensorrt") != std::string::npos;
 }
 
