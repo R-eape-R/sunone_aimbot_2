@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <system_error>
 
 #include "other_tools.h"
@@ -23,6 +24,17 @@ namespace depth_anything
         constexpr int kMinInputSize = 160;
         constexpr int kMaxInputSize = 640;
         constexpr int kOptInputSize = 224;
+
+        bool TensorDimToInt(int64_t value, int& out)
+        {
+            if (value <= 0 || value > static_cast<int64_t>(std::numeric_limits<int>::max()))
+            {
+                return false;
+            }
+
+            out = static_cast<int>(value);
+            return true;
+        }
 
         bool PathComponentEquals(const std::filesystem::path& left, const std::filesystem::path& right)
         {
@@ -347,9 +359,8 @@ namespace depth_anything
         }
         else
         {
-            input_h = input_dims.d[input_dims.nbDims - 2];
-            input_w = input_dims.d[input_dims.nbDims - 1];
-            if (input_h <= 0 || input_w <= 0)
+            if (!TensorDimToInt(input_dims.d[input_dims.nbDims - 2], input_h) ||
+                !TensorDimToInt(input_dims.d[input_dims.nbDims - 1], input_w))
             {
                 last_error = "Depth input dimensions are invalid.";
                 auto err = last_error;
@@ -918,9 +929,8 @@ namespace depth_anything
             elements *= static_cast<size_t>(output_dims.d[i]);
         }
 
-        out_h = output_dims.d[output_dims.nbDims - 2];
-        out_w = output_dims.d[output_dims.nbDims - 1];
-        if (out_h <= 0 || out_w <= 0)
+        if (!TensorDimToInt(output_dims.d[output_dims.nbDims - 2], out_h) ||
+            !TensorDimToInt(output_dims.d[output_dims.nbDims - 1], out_w))
         {
             last_error = "Depth output dimensions are invalid.";
             return false;
